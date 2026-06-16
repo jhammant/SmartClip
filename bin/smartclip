@@ -1,0 +1,98 @@
+#!/usr/bin/env sh
+# smartclip — cross-platform clipboard read/write for SmartClip.
+#
+#   smartclip copy   < file      # write stdin to the system clipboard
+#   smartclip paste  > file      # read the system clipboard to stdout
+#   ... | smartclip              # "copy" is the default when no subcommand given
+#
+# Auto-detects the right clipboard backend for macOS, Wayland, X11,
+# Windows/WSL and Termux. MIT licensed — part of SmartClip.
+# https://github.com/jhammant/SmartClip
+
+set -eu
+
+cmd="${1:-copy}"
+[ "$#" -gt 0 ] && shift 2>/dev/null || true
+
+die() { printf 'smartclip: %s\n' "$1" >&2; exit "${2:-1}"; }
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+no_backend() {
+  printf 'smartclip: no clipboard tool found for this platform.\n' >&2
+  printf 'Install one of: pbcopy/pbpaste (macOS), wl-clipboard, xclip, xsel,\n' >&2
+  printf 'or run inside WSL (clip.exe / powershell.exe) or Termux.\n' >&2
+  exit 127
+}
+
+do_copy() {
+  # Buffer stdin so we can both copy it and report its size accurately.
+  tmp=$(mktemp "${TMPDIR:-/tmp}/smartclip.XXXXXX") || die "could not create temp file"
+  trap 'rm -f "$tmp"' EXIT INT TERM
+  cat > "$tmp"
+
+  if have pbcopy; then
+    backend=pbcopy;  pbcopy < "$tmp"
+  elif [ -n "${WAYLAND_DISPLAY:-}" ] && have wl-copy; then
+    backend=wl-copy; wl-copy < "$tmp"
+  elif [ -n "${DISPLAY:-}" ] && have xclip; then
+    backend=xclip;   xclip -selection clipboard < "$tmp"
+  elif [ -n "${DISPLAY:-}" ] && have xsel; then
+    backend=xsel;    xsel --clipboard --input < "$tmp"
+  elif have wl-copy; then
+    backend=wl-copy; wl-copy < "$tmp"
+  elif have xclip; then
+    backend=xclip;   xclip -selection clipboard < "$tmp"
+  elif have xsel; then
+    backend=xsel;    xsel --clipboard --input < "$tmp"
+  elif have clip.exe; then
+    backend=clip.exe; clip.exe < "$tmp"
+  elif have clip; then
+    backend=clip;     clip < "$tmp"
+  elif have termux-clipboard-set; then
+    backend=termux;   termux-clipboard-set < "$tmp"
+  else
+    no_backend
+  fi
+
+  bytes=$(wc -c < "$tmp" | tr -d ' ')
+  lines=$(wc -l < "$tmp" | tr -d ' ')
+  printf 'smartclip: copied %s bytes / %s lines to clipboard (via %s)\n' \
+    "$bytes" "$lines" "$backend" >&2
+}
+
+do_paste() {
+  if have pbpaste; then
+    pbpaste
+  elif [ -n "${WAYLAND_DISPLAY:-}" ] && have wl-paste; then
+    wl-paste --no-newline
+  elif [ -n "${DISPLAY:-}" ] && have xclip; then
+    xclip -selection clipboard -o
+  elif [ -n "${DISPLAY:-}" ] && have xsel; then
+    xsel --clipboard --output
+  elif have wl-paste; then
+    wl-paste --no-newline
+  elif have xclip; then
+    xclip -selection clipboard -o
+  elif have xsel; then
+    xsel --clipboard --output
+  elif have powershell.exe; then
+    # Strip the trailing CRLF PowerShell adds.
+    powershell.exe -NoProfile -Command Get-Clipboard | sed 's/\r$//'
+  elif have termux-clipboard-get; then
+    termux-clipboard-get
+  else
+    no_backend
+  fi
+}
+
+case "$cmd" in
+  copy|c|-|"")  do_copy  ;;
+  paste|p)      do_paste ;;
+  -h|--help|help)
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    die "unknown command '$cmd' (expected 'copy' or 'paste')" 2
+    ;;
+esac

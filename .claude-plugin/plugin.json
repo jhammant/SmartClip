@@ -1,0 +1,20 @@
+{
+  "name": "smartclip",
+  "version": "0.1.0",
+  "description": "Smart clipboard for Claude Code. /clp intelligently copies the most relevant deliverable from your recent work; /pst reads your clipboard and acts on it in context.",
+  "author": {
+    "name": "Jonathan Hammant",
+    "email": "jhammant@gmail.com"
+  },
+  "homepage": "https://github.com/jhammant/SmartClip",
+  "repository": "https://github.com/jhammant/SmartClip",
+  "license": "MIT",
+  "keywords": [
+    "clipboard",
+    "copy",
+    "paste",
+    "productivity",
+    "slash-command",
+    "smartclip"
+  ]
+}
