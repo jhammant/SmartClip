@@ -12,7 +12,7 @@
     {
       "name": "smartclip",
       "source": "./",
-      "description": "/clp smart-copies the most relevant deliverable from your recent work; /pst smart-pastes your clipboard and acts on it in context. Cross-platform (macOS, Linux, WSL).",
+      "description": "/clp smart-copies the most relevant deliverable from your recent work; /pst smart-pastes your clipboard and acts on it in context; /clh is an opt-in, secure typed clipboard history with plain-English recall. Cross-platform (macOS, Linux, WSL).",
       "version": "0.1.0",
       "license": "MIT",
       "keywords": ["clipboard", "copy", "paste", "productivity"]

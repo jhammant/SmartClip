@@ -59,7 +59,8 @@ ok "helper installed → $BIN_DIR/smartclip"
 
 install_file "commands/clp.md" "$CMD_DIR/clp.md"
 install_file "commands/pst.md" "$CMD_DIR/pst.md"
-ok "commands installed → $CMD_DIR/{clp,pst}.md"
+install_file "commands/clh.md" "$CMD_DIR/clh.md"
+ok "commands installed → $CMD_DIR/{clp,pst,clh}.md"
 
 # --- PATH check ---------------------------------------------------------------
 case ":${PATH}:" in
@@ -82,4 +83,7 @@ fi
 
 printf '\n✅  Done. Restart Claude Code, then try:\n'
 printf '      \033[1m/clp\033[0m   after generating something  (smart copy)\n'
-printf '      \033[1m/pst\033[0m   with something on your clipboard  (smart paste)\n\n'
+printf '      \033[1m/pst\033[0m   with something on your clipboard  (smart paste)\n'
+printf '      \033[1m/clh\033[0m   list / recall past clips      (clip history, opt-in)\n\n'
+printf 'History is OFF by default. To remember past clips, add to your shell rc:\n'
+printf '      export SMARTCLIP_HISTORY=1\n\n'

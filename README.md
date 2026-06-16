@@ -2,7 +2,7 @@
 
 **Intelligent clipboard commands for [Claude Code](https://claude.com/claude-code).**
 
-SmartClip adds two slash commands that understand *what you were just doing*:
+SmartClip adds slash commands that understand *what you were just doing*:
 
 - **`/clp`** — **smart copy.** Looks at your recent work — code you were
   writing, an email reply, docs, a shell command, JSON — and copies the clean,
@@ -11,6 +11,9 @@ SmartClip adds two slash commands that understand *what you were just doing*:
 - **`/pst`** — **smart paste.** Reads your clipboard and does the *right thing
   with it* in context — diagnoses a pasted stack trace, integrates a snippet,
   drafts a reply to a pasted message, pretty-prints JSON, and so on.
+- **`/clh`** — **clip history** *(opt-in)*. A typed, searchable history of
+  everything you've copied. List it, recall item #3, or ask in plain English —
+  "the last url", "that python function". See [Clipboard history](#clipboard-history).
 
 Cross-platform: macOS, Linux (Wayland & X11), Windows/WSL, and Termux.
 
@@ -110,6 +113,50 @@ prompt gate anything destructive — it never auto-approves dangerous commands.
 Both commands accept any free-text instruction; if you give none, SmartClip
 infers intent from the conversation.
 
+### `/clh` — clip history *(opt-in)*
+
+| Command | What SmartClip does |
+|---|---|
+| `/clh` | list recent clips (numbered, newest first, with type + preview) |
+| `/clh 3` | re-copy item #3 back to the clipboard |
+| `/clh the last url` · `/clh that python function` | natural-language recall — find the match and re-copy it |
+| `/clh clear` | purge all history |
+
+History is **off by default**. Turn it on with `export SMARTCLIP_HISTORY=1`.
+
+---
+
+## Clipboard history
+
+`/clh` is backed by a small, **opt-in** typed history. It's built to be safe by
+default:
+
+- **Off unless you opt in.** Nothing is recorded until you set
+  `SMARTCLIP_HISTORY=1`. A single copy can opt out with `smartclip copy --no-history`.
+- **Owner-only on disk.** Stored under `${XDG_DATA_HOME:-~/.local/share}/smartclip`
+  with `umask 077` — directory `700`, files `600`. No other user can read it.
+- **Secrets are skipped, not stored.** Anything that looks like a credential —
+  GitHub/GitLab/Slack/Stripe/AWS/Google tokens, JWTs, PEM private keys, or
+  `password = …` / `api_key: …` lines — is detected and **never written to
+  disk**; the history just notes that a clip was skipped, with a redacted preview.
+- **Add your own rules.** `SMARTCLIP_HISTORY_EXCLUDE='<regex>'` marks any matching
+  clip as never-store (e.g. an internal project codename).
+- **Bounded.** Clips larger than `SMARTCLIP_HISTORY_MAXSIZE` (default 1 MiB) aren't
+  stored; the log is capped at `SMARTCLIP_HISTORY_MAX` entries (default 200), oldest pruned.
+- **Easy to wipe.** `smartclip history clear` (or `/clh clear`) deletes everything.
+
+> ⚠️ Detection is best-effort and history is **plaintext on disk**. Don't enable
+> it on shared or untrusted machines. If you copy a secret SmartClip didn't
+> recognise, run `smartclip history clear`.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SMARTCLIP_HISTORY` | *(unset)* | set to `1` to enable recording |
+| `SMARTCLIP_HISTORY_MAX` | `200` | max entries kept |
+| `SMARTCLIP_HISTORY_MAXSIZE` | `1048576` | max bytes stored per clip |
+| `SMARTCLIP_HISTORY_EXCLUDE` | *(none)* | regex of content to never store |
+| `SMARTCLIP_DATA_DIR` | `~/.local/share/smartclip` | where history lives |
+
 ---
 
 ## How it works
@@ -123,9 +170,10 @@ SmartClip/
 │   └── marketplace.json     # so others can `/plugin marketplace add`
 ├── commands/
 │   ├── clp.md               # /clp prompt — picks & cleans the deliverable
-│   └── pst.md               # /pst prompt — reads clipboard, acts in context
+│   ├── pst.md               # /pst prompt — reads clipboard, acts in context
+│   └── clh.md               # /clh prompt — list / recall clip history
 ├── bin/
-│   └── smartclip            # cross-platform copy/paste helper (POSIX sh)
+│   └── smartclip            # cross-platform copy/paste/history helper (POSIX sh)
 ├── install.sh               # standalone installer
 ├── video/                   # Remotion source for the launch video
 ├── LICENSE

@@ -1,7 +1,7 @@
 {
   "name": "smartclip",
   "version": "0.1.0",
-  "description": "Smart clipboard for Claude Code. /clp intelligently copies the most relevant deliverable from your recent work; /pst reads your clipboard and acts on it in context.",
+  "description": "Smart clipboard for Claude Code. /clp intelligently copies the most relevant deliverable from your recent work; /pst reads your clipboard and acts on it in context; /clh is an opt-in, secure typed clipboard history you can recall in plain English.",
   "author": {
     "name": "Jonathan Hammant",
     "email": "jhammant@gmail.com"

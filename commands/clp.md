@@ -73,14 +73,20 @@ the user would otherwise have to select by hand — nothing more.
    the Write tool (this avoids any shell-quoting/escaping issues with code,
    quotes, or backticks).
 2. Then run exactly this (it locates the bundled helper whether SmartClip is
-   installed as a plugin or via `install.sh`):
+   installed as a plugin or via `install.sh`). Fill in `--type` from your Step 1
+   classification (e.g. `python`, `bash`, `email`, `markdown`, `json`, `url`,
+   `usernames`, `text`) and `--label` with a short human description (e.g.
+   `slugify()`, `reply to Sam`, `12 usernames`) — these power `/clh` recall:
 
    ```bash
    CLIP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/smartclip}"
    { [ -n "$CLIP" ] && [ -x "$CLIP" ]; } || CLIP="$(command -v smartclip 2>/dev/null || echo "$HOME/.local/bin/smartclip")"
-   "$CLIP" copy < /tmp/smartclip-payload.txt
+   "$CLIP" copy --type "<type>" --label "<short label>" < /tmp/smartclip-payload.txt
    rm -f /tmp/smartclip-payload.txt
    ```
+
+   (History only records when the user has opted in with `SMARTCLIP_HISTORY=1`;
+   the flags are harmless otherwise.)
 
 ## Step 4 — Confirm
 

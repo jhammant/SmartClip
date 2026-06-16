@@ -1,22 +1,35 @@
 #!/usr/bin/env sh
-# smartclip — cross-platform clipboard read/write for SmartClip.
+# smartclip — cross-platform clipboard read/write + typed history for SmartClip.
 #
-#   smartclip copy   < file      # write stdin to the system clipboard
-#   smartclip paste  > file      # read the system clipboard to stdout
-#   ... | smartclip              # "copy" is the default when no subcommand given
+#   smartclip copy [--type T] [--label L] [--no-history]   < file
+#   smartclip paste                                          > file
+#   smartclip history [list | get N | recall N | path | clear]
+#   ... | smartclip            # "copy" is the default subcommand
 #
-# Auto-detects the right clipboard backend for macOS, Wayland, X11,
-# Windows/WSL and Termux. MIT licensed — part of SmartClip.
-# https://github.com/jhammant/SmartClip
+# History is OPT-IN. Set SMARTCLIP_HISTORY=1 to record copies. Entries live
+# under ${XDG_DATA_HOME:-~/.local/share}/smartclip (dir 700, files 600), are
+# capped at SMARTCLIP_HISTORY_MAX (default 200), and anything that looks like a
+# secret (tokens, private keys, long opaque blobs) is skipped, not stored.
+#
+# Auto-detects the clipboard backend for macOS, Wayland, X11, Windows/WSL and
+# Termux. MIT licensed — part of SmartClip. https://github.com/jhammant/SmartClip
 
 set -eu
 
-cmd="${1:-copy}"
-[ "$#" -gt 0 ] && shift 2>/dev/null || true
+DATA_DIR="${SMARTCLIP_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/smartclip}"
+HIST="$DATA_DIR/history.jsonl"
+CLIPS="$DATA_DIR/clips"
+SEQF="$DATA_DIR/.seq"
+HMAX="${SMARTCLIP_HISTORY_MAX:-200}"
+HMAXSIZE="${SMARTCLIP_HISTORY_MAXSIZE:-1048576}"   # don't store clips bigger than this (1 MiB)
+HEXCLUDE="${SMARTCLIP_HISTORY_EXCLUDE:-}"          # user regex; matches → never stored
 
-die() { printf 'smartclip: %s\n' "$1" >&2; exit "${2:-1}"; }
-
+die()  { printf 'smartclip: %s\n' "$1" >&2; exit "${2:-1}"; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+history_enabled() {
+  case "${SMARTCLIP_HISTORY:-}" in 1|true|yes|on|TRUE|YES|ON) return 0 ;; *) return 1 ;; esac
+}
 
 no_backend() {
   printf 'smartclip: no clipboard tool found for this platform.\n' >&2
@@ -25,8 +38,19 @@ no_backend() {
   exit 127
 }
 
+# --------------------------------------------------------------------- copy
 do_copy() {
-  # Buffer stdin so we can both copy it and report its size accurately.
+  ctype="" clabel="" nohist=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --type)       ctype="${2:-}";  shift; [ "$#" -gt 0 ] && shift || true ;;
+      --label)      clabel="${2:-}"; shift; [ "$#" -gt 0 ] && shift || true ;;
+      --no-history) nohist=1; shift ;;
+      --) shift; break ;;
+      *)  shift ;;
+    esac
+  done
+
   tmp=$(mktemp "${TMPDIR:-/tmp}/smartclip.XXXXXX") || die "could not create temp file"
   trap 'rm -f "$tmp"' EXIT INT TERM
   cat > "$tmp"
@@ -59,40 +83,215 @@ do_copy() {
   lines=$(wc -l < "$tmp" | tr -d ' ')
   printf 'smartclip: copied %s bytes / %s lines to clipboard (via %s)\n' \
     "$bytes" "$lines" "$backend" >&2
-}
 
-do_paste() {
-  if have pbpaste; then
-    pbpaste
-  elif [ -n "${WAYLAND_DISPLAY:-}" ] && have wl-paste; then
-    wl-paste --no-newline
-  elif [ -n "${DISPLAY:-}" ] && have xclip; then
-    xclip -selection clipboard -o
-  elif [ -n "${DISPLAY:-}" ] && have xsel; then
-    xsel --clipboard --output
-  elif have wl-paste; then
-    wl-paste --no-newline
-  elif have xclip; then
-    xclip -selection clipboard -o
-  elif have xsel; then
-    xsel --clipboard --output
-  elif have powershell.exe; then
-    # Strip the trailing CRLF PowerShell adds.
-    powershell.exe -NoProfile -Command Get-Clipboard | sed 's/\r$//'
-  elif have termux-clipboard-get; then
-    termux-clipboard-get
-  else
-    no_backend
+  if [ "$nohist" -eq 0 ] && history_enabled; then
+    log_history "$tmp" "$ctype" "$clabel" "$bytes"
   fi
 }
 
-case "$cmd" in
-  copy|c|-|"")  do_copy  ;;
-  paste|p)      do_paste ;;
-  -h|--help|help)
-    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
-    ;;
-  *)
-    die "unknown command '$cmd' (expected 'copy' or 'paste')" 2
-    ;;
+# -------------------------------------------------------------------- paste
+do_paste() {
+  if have pbpaste; then pbpaste
+  elif [ -n "${WAYLAND_DISPLAY:-}" ] && have wl-paste; then wl-paste --no-newline
+  elif [ -n "${DISPLAY:-}" ] && have xclip; then xclip -selection clipboard -o
+  elif [ -n "${DISPLAY:-}" ] && have xsel; then xsel --clipboard --output
+  elif have wl-paste; then wl-paste --no-newline
+  elif have xclip; then xclip -selection clipboard -o
+  elif have xsel; then xsel --clipboard --output
+  elif have powershell.exe; then powershell.exe -NoProfile -Command Get-Clipboard | sed 's/\r$//'
+  elif have termux-clipboard-get; then termux-clipboard-get
+  else no_backend
+  fi
+}
+
+# ------------------------------------------------------------------ history
+date_now()  { date +%Y-%m-%dT%H:%M:%S 2>/dev/null || printf '?'; }
+
+next_seq() {
+  n=0
+  [ -f "$SEQF" ] && n=$(cat "$SEQF" 2>/dev/null || printf 0)
+  n=$((n + 1))
+  printf '%s' "$n" > "$SEQF"
+  printf '%s' "$n"
+}
+
+# Reverse a file line-wise, portably (GNU tac, BSD tail -r, or awk fallback).
+tac_file() {
+  if have tac; then tac "$1"
+  elif tail -r "$1" >/dev/null 2>&1; then tail -r "$1"
+  else awk '{a[NR]=$0} END{for(i=NR;i>=1;i--) print a[i]}' "$1"
+  fi
+}
+
+# Best-effort secret detection on a content file. Returns 0 if it looks secret.
+looks_secret() {
+  c=$1
+  # 1. user-supplied exclusion regex
+  if [ -n "$HEXCLUDE" ] && grep -Eq "$HEXCLUDE" "$c"; then return 0; fi
+  # 2. known credential token shapes
+  if grep -Eq '(ghp_|gho_|ghu_|ghs_|github_pat_|glpat-|sk-[A-Za-z0-9]{8}|sk_live_|rk_live_|xox[baprs]-|xapp-|AKIA[0-9A-Z]{12}|ASIA[0-9A-Z]{12}|AIza[0-9A-Za-z_-]{20}|ya29\.|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+|-----BEGIN [A-Z ]*PRIVATE KEY-----)' "$c"; then
+    return 0
+  fi
+  # 3. "secret-ish keyword = value" assignments
+  if grep -Eiq '(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token|private[_-]?key|client[_-]?secret)[[:space:]]*[:=][[:space:]]*[^[:space:]]' "$c"; then
+    return 0
+  fi
+  # 4. a lone high-entropy opaque token (e.g. a bare API key on one line)
+  if [ "$(wc -l < "$c" | tr -d ' ')" -le 1 ]; then
+    tok=$(tr -d '[:space:]' < "$c")
+    len=$(printf '%s' "$tok" | wc -c | tr -d ' ')
+    if [ "$len" -ge 40 ] && printf '%s' "$tok" | grep -Eq '^[A-Za-z0-9+/_=.-]+$' \
+       && ! printf '%s' "$tok" | grep -q '://'; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
+guess_type() {
+  c=$1
+  if [ "$(wc -l < "$c" | tr -d ' ')" -le 1 ] \
+     && grep -Eq '^[[:space:]]*https?://[^[:space:]]+[[:space:]]*$' "$c"; then
+    printf url; return
+  fi
+  case "$(head -c1 "$c" 2>/dev/null)" in '{'|'[') printf json; return ;; esac
+  if grep -Eq '^[[:space:]]*(def |class |import |from |function |const |let |var |#include|package |public |private |async )' "$c"; then
+    printf code; return
+  fi
+  printf text
+}
+
+# JSON-escape a short string (backslash, quote, strip control chars).
+ejson() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\000-\037'; }
+
+make_preview() { head -c 140 "$1" | tr '\n\t' '  ' | tr -d '\000-\037'; }
+
+log_history() { # $1=contentfile $2=type $3=label $4=bytes
+  cf=$1; t=$2; l=$3; b=$4
+  umask 077                              # everything we create is owner-only from birth
+  mkdir -p "$CLIPS"; chmod 700 "$DATA_DIR" 2>/dev/null || true
+  if [ "$b" -gt "$HMAXSIZE" ]; then
+    t="large"; l="(skipped: $b bytes, over ${HMAXSIZE}B limit)"; store=""; prev="(not stored)"
+  elif looks_secret "$cf"; then
+    t="redacted"; l="(skipped: looked like a secret)"; store=""; prev="(redacted)"
+  else
+    [ -z "$t" ] && t=$(guess_type "$cf")
+    sq=$(next_seq); store="clips/$sq.txt"
+    cp "$cf" "$DATA_DIR/$store"; chmod 600 "$DATA_DIR/$store" 2>/dev/null || true
+    prev=$(make_preview "$cf")
+  fi
+  printf '{"ts":"%s","dir":"copy","type":"%s","label":"%s","bytes":%s,"file":"%s","preview":"%s"}\n' \
+    "$(date_now)" "$(ejson "$t")" "$(ejson "$l")" "$b" "$store" "$(ejson "$prev")" \
+    >> "$HIST"
+  chmod 600 "$HIST" 2>/dev/null || true
+  prune_history
+}
+
+prune_history() {
+  [ -f "$HIST" ] || return 0
+  lines=$(wc -l < "$HIST" | tr -d ' ')
+  [ "$lines" -le "$HMAX" ] && return 0
+  drop=$((lines - HMAX))
+  head -n "$drop" "$HIST" | sed -n 's/.*"file":"\(clips\/[^"]*\)".*/\1/p' | while IFS= read -r f; do
+    [ -n "$f" ] && rm -f "$DATA_DIR/$f"
+  done
+  tail -n "$HMAX" "$HIST" > "$HIST.tmp" && mv "$HIST.tmp" "$HIST"
+  chmod 600 "$HIST" 2>/dev/null || true
+}
+
+nth_line() { # $1 = index counted from newest (1-based)
+  n=$1
+  [ -f "$HIST" ] || return 1
+  total=$(wc -l < "$HIST" | tr -d ' ')
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  { [ "$n" -ge 1 ] && [ "$n" -le "$total" ]; } || return 1
+  sed -n "$((total - n + 1))p" "$HIST"
+}
+
+field() { printf '%s' "$1" | sed -n "s/.*\"$2\":\"\\([^\"]*\\)\".*/\\1/p"; }
+
+hist_list() {
+  if [ ! -f "$HIST" ]; then
+    printf 'smartclip: no history yet.\n' >&2
+    history_enabled || printf 'Enable it:  export SMARTCLIP_HISTORY=1\n' >&2
+    return 0
+  fi
+  i=0
+  tac_file "$HIST" | while IFS= read -r line; do
+    i=$((i + 1))
+    ts=$(field "$line" ts); ty=$(field "$line" type)
+    lb=$(field "$line" label); pv=$(field "$line" preview)
+    [ -n "$lb" ] && desc=$lb || desc=$pv
+    printf '%3d  %-19s  %-9s  %s\n' "$i" "$ts" "[$ty]" "$desc"
+  done
+}
+
+hist_get() {
+  n="${1:-}"; [ -n "$n" ] || die "usage: smartclip history get N"
+  line=$(nth_line "$n") || die "no history item #$n"
+  f=$(printf '%s' "$line" | sed -n 's/.*"file":"\(clips\/[0-9][0-9]*\.txt\)".*/\1/p')
+  { [ -n "$f" ] && [ -f "$DATA_DIR/$f" ]; } || die "item #$n has no stored content"
+  cat "$DATA_DIR/$f"
+}
+
+hist_recall() {
+  n="${1:-}"; [ -n "$n" ] || die "usage: smartclip history recall N"
+  hist_get "$n" | do_copy --no-history --label "recalled #$n"
+}
+
+hist_clear() {
+  rm -rf "$CLIPS" "$HIST" "$HIST.tmp" "$SEQF" 2>/dev/null || true
+  printf 'smartclip: history cleared.\n' >&2
+}
+
+do_history() {
+  action="${1:-list}"; [ "$#" -gt 0 ] && shift || true
+  case "$action" in
+    list|ls|"") hist_list ;;
+    get)        hist_get "${1:-}" ;;
+    recall|re)  hist_recall "${1:-}" ;;
+    path)       printf '%s\n' "$HIST" ;;
+    clear)      hist_clear ;;
+    *) die "unknown history action '$action' (list | get N | recall N | path | clear)" 2 ;;
+  esac
+}
+
+show_help() {
+  cat >&2 <<'EOF'
+smartclip — cross-platform clipboard read/write + typed history.
+
+  smartclip copy [--type T] [--label L] [--no-history]  < file
+  smartclip paste                                        > file
+  smartclip history [list | get N | recall N | path | clear]
+  ... | smartclip            # "copy" is the default
+
+History is OPT-IN and stored locally in plaintext. Enable with:
+  export SMARTCLIP_HISTORY=1
+
+Security model:
+  • off unless SMARTCLIP_HISTORY is set; one copy can opt out with --no-history
+  • stored under ${XDG_DATA_HOME:-~/.local/share}/smartclip, owner-only (dir 700, files 600, umask 077)
+  • likely secrets are skipped, not stored (tokens, keys, JWTs, password=… lines)
+  • previews of skipped items are redacted, never the secret itself
+  • clips over SMARTCLIP_HISTORY_MAXSIZE bytes (default 1 MiB) are not stored
+  • SMARTCLIP_HISTORY_EXCLUDE='<regex>' adds your own never-store patterns
+  • capped at SMARTCLIP_HISTORY_MAX entries (default 200); oldest pruned
+  • `smartclip history clear` purges everything
+
+Note: detection is best-effort and storage is plaintext on disk. Don't enable
+history on shared/untrusted machines.
+
+https://github.com/jhammant/SmartClip
+EOF
+}
+
+# ---------------------------------------------------------------------- main
+sub="${1:-copy}"
+[ "$#" -gt 0 ] && shift || true
+case "$sub" in
+  copy|c|-|"")        do_copy "$@" ;;
+  paste|p)            do_paste ;;
+  history|hist|h)     do_history "$@" ;;
+  -h|--help|help)     show_help ;;
+  *) die "unknown command '$sub' (copy | paste | history)" 2 ;;
 esac
