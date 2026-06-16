@@ -9,20 +9,44 @@ likely wants on their clipboard *right now* based on the recent conversation,
 extract the cleanest copy-ready version of it, and place it on the system
 clipboard. Be decisive — copy something useful, then say what you copied.
 
-## Optional steer
+## Smart arguments — `$ARGUMENTS`
 
 `$ARGUMENTS`
 
-If non-empty, treat it as an instruction for what (or how) to copy — e.g.
-"just the code", "the bash command", "the email reply", "as plain text",
-"the whole last message", "the diff". If empty, infer the best deliverable
-yourself.
+`/clp` works two ways depending on what (if anything) you pass:
+
+1. **No arguments → infer.** Pick the single most paste-ready deliverable from
+   the most recent work (Step 1) and copy it.
+2. **With an argument → obey.** The text after `/clp` is either a **selector**
+   (which deliverable) or an **extraction query** (pull specific things out of
+   the recent conversation). It always overrides inference.
+
+| You type | What lands on the clipboard |
+|---|---|
+| `/clp` | best-guess deliverable from recent work |
+| `/clp just the code` · `/clp the function` | only the code, raw, no fences |
+| `/clp the command` · `/clp the bash` | just the shell command(s), runnable |
+| `/clp the email` · `/clp the reply` | the last email / message body you drafted |
+| `/clp the diff` | the most recent diff / patch |
+| `/clp the json` · `/clp the table` | the structured data, raw |
+| `/clp as plain text` · `/clp as markdown` | the last answer, in that format |
+| `/clp the whole message` | the entire last assistant message, verbatim |
+| `/clp usernames` · `/clp the emails` · `/clp the urls` | **extraction** — every matching item, one per line |
+| `/clp the <anything>` | the thing in recent context that best matches "<anything>" |
+
+**Extraction queries** ("usernames", "emails", "URLs", "file paths", "IPs",
+"the numbers", "every TODO", …): don't copy a block — **scan the recent
+conversation**, pull out every item that matches, de-duplicate, preserve order,
+and copy them one per line (or comma-separated when that's the obvious format).
+Report how many you found.
 
 ## Step 1 — Identify the deliverable
 
-Look back over the recent turns (favor the **most recent** assistant output, but
-use earlier context to disambiguate). Classify what kind of work just happened
-and pick the single most paste-ready artifact:
+If `$ARGUMENTS` is an extraction query, skip this table and produce the list as
+described above instead. Otherwise, look back over the recent turns (favor the
+**most recent** assistant output, but use earlier context to disambiguate),
+classify what kind of work just happened, and pick the single most paste-ready
+artifact:
 
 | Recent work | What to put on the clipboard |
 |---|---|

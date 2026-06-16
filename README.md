@@ -77,19 +77,38 @@ commands to `~/.claude/commands/`. Restart Claude Code and you're set.
 
 ## Usage
 
-| Command | What it does |
-|---|---|
-| `/clp` | Auto-detect the best deliverable from recent work and copy it. |
-| `/clp just the code` | Steer it — copy only the code block. |
-| `/clp the email` | Copy the message/email body. |
-| `/clp as plain text` | Strip formatting, copy plain text. |
-| `/pst` | Read clipboard, infer the smart action, do it. |
-| `/pst explain` | Explain whatever's on the clipboard. |
-| `/pst add to utils.py` | Integrate the clipboard snippet into a file. |
-| `/pst draft a reply` | Draft a reply to a pasted message. |
+Run a command bare to let SmartClip infer what you mean — or add a **smart
+argument** to tell it exactly.
 
-Both commands accept a free-text steer after the command name; if you give none,
-SmartClip infers intent from the conversation.
+### `/clp` — smart copy
+
+| Command | What lands on your clipboard |
+|---|---|
+| `/clp` | the best-guess deliverable from recent work |
+| `/clp just the code` · `/clp the function` | only the code, raw, no fences |
+| `/clp the command` | just the shell command(s), runnable |
+| `/clp the email` · `/clp the reply` | the last email / message body you drafted |
+| `/clp the diff` | the most recent diff / patch |
+| `/clp as plain text` · `/clp as markdown` | the last answer, in that format |
+| `/clp usernames` · `/clp the emails` · `/clp the urls` | **extraction** — every match, one per line |
+
+### `/pst` — smart paste
+
+| Command | What SmartClip does |
+|---|---|
+| `/pst` | read clipboard, infer the smart action, do it |
+| `/pst explain this` | explain whatever's on the clipboard |
+| `/pst run this` | run the clipboard contents as a command¹ |
+| `/pst fix this` | treat the clipboard as an error/snippet and fix the cause |
+| `/pst add to utils.py` | integrate the clipboard snippet into a file |
+| `/pst draft a reply` | draft a reply to a pasted message |
+| `/pst convert to <X>` | convert it (JSON→YAML, JS→TS, `curl`→`fetch`, …) |
+
+¹ `run this` echoes the command first and lets Claude Code's normal permission
+prompt gate anything destructive — it never auto-approves dangerous commands.
+
+Both commands accept any free-text instruction; if you give none, SmartClip
+infers intent from the conversation.
 
 ---
 
@@ -108,6 +127,7 @@ SmartClip/
 ├── bin/
 │   └── smartclip            # cross-platform copy/paste helper (POSIX sh)
 ├── install.sh               # standalone installer
+├── video/                   # Remotion source for the launch video
 ├── LICENSE
 └── README.md
 ```

@@ -21,13 +21,32 @@ CLIP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/smartclip}"
 
 If the clipboard is empty, say so and stop.
 
-## Step 2 — Read the user's intent
+## Step 2 — Smart arguments — `$ARGUMENTS`
 
 `$ARGUMENTS`
 
-If non-empty, this is an explicit instruction — perform it using the clipboard
-content as the subject (e.g. "explain", "add to utils.py", "convert to TypeScript",
-"draft a reply", "fix this", "summarize"). The instruction wins over inference.
+If you pass text after `/pst`, it's an explicit instruction — perform it with
+the clipboard contents as the subject. The instruction always wins over
+inference.
+
+| You type | SmartClip does |
+|---|---|
+| `/pst` | read clipboard, infer the smart action (Step 3) |
+| `/pst explain this` | explain what's on the clipboard |
+| `/pst run this` | run the clipboard contents as a shell command — see safety note |
+| `/pst fix this` | treat the clipboard as an error/snippet and fix the cause in this repo |
+| `/pst add to <file>` | integrate the clipboard snippet into `<file>`, matching its style |
+| `/pst reply` · `/pst draft a reply` | draft a reply to the pasted message in the user's voice |
+| `/pst summarize` · `/pst tl;dr` | summarize the clipboard contents |
+| `/pst convert to <X>` | convert it (e.g. JSON→YAML, JS→TS, `curl`→`fetch`) |
+| `/pst review this` | review the pasted code/diff for bugs and improvements |
+| `/pst <any instruction>` | do exactly that, using the clipboard as input |
+
+> **Safety for `run this` (and anything that executes or deletes):** echo the
+> exact command back first. If it looks destructive (`rm -rf`, `dd`, `curl … |
+> sh`, force-push, dropping a database, etc.), say plainly what it will do and
+> let the user's normal tool-permission prompt gate it — never pre-approve a
+> dangerous command on the user's behalf.
 
 ## Step 3 — If no instruction, infer the smart action
 
