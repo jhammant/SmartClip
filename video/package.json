@@ -1,0 +1,20 @@
+{
+  "name": "smartclip-video",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Launch video for SmartClip, built with Remotion.",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render src/index.ts SmartClip out/smartclip.mp4",
+    "render:square": "remotion render src/index.ts SmartClip out/smartclip.mp4 --image-format=jpeg"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0"
+  }
+}
