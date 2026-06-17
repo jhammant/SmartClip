@@ -69,20 +69,37 @@ the user would otherwise have to select by hand — nothing more.
 
 ## Step 3 — Copy it
 
-1. Write the cleaned content **verbatim** to `/tmp/smartclip-payload.txt` using
-   the Write tool (this avoids any shell-quoting/escaping issues with code,
-   quotes, or backticks).
-2. Then run exactly this (it locates the bundled helper whether SmartClip is
-   installed as a plugin or via `install.sh`). Fill in `--type` from your Step 1
-   classification (e.g. `python`, `bash`, `email`, `markdown`, `json`, `url`,
-   `usernames`, `text`) and `--label` with a short human description (e.g.
-   `slugify()`, `reply to Sam`, `12 usernames`) — these power `/clh` recall:
+1. **Find the writable temp dir.** The Claude Code sandbox blocks writes to
+   `/tmp` directly — the writable path is `$TMPDIR`. Run this first and use the
+   exact path it prints as `<TMP>` below:
+
+   ```bash
+   printf '%s\n' "${TMPDIR:-/tmp}"
+   ```
+
+2. **Write the payload.** Write the cleaned content **verbatim** to
+   `<TMP>/smartclip-payload.txt` using the Write tool — substitute the literal
+   path from step 1 (the Write tool does not expand `$TMPDIR`). Using the Write
+   tool avoids shell-quoting/escaping issues with code, quotes, or backticks.
+
+3. **Copy it.** Run exactly this (it locates the bundled helper whether
+   SmartClip is installed as a plugin or via `install.sh`). Fill in `--type`
+   from your Step 1 classification (e.g. `python`, `bash`, `email`, `markdown`,
+   `json`, `url`, `usernames`, `text`) and `--label` with a short human
+   description (e.g. `slugify()`, `reply to Sam`, `12 usernames`) — these power
+   `/clh` recall. The `if … else` reports `CLIPBOARD_BLOCKED` when the sandbox
+   denies clipboard access, and keeps the payload file in that case so the
+   fallback in Step 4 can still reach it:
 
    ```bash
    CLIP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/smartclip}"
    { [ -n "$CLIP" ] && [ -x "$CLIP" ]; } || CLIP="$(command -v smartclip 2>/dev/null || echo "$HOME/.local/bin/smartclip")"
-   "$CLIP" copy --type "<type>" --label "<short label>" < /tmp/smartclip-payload.txt
-   rm -f /tmp/smartclip-payload.txt
+   PAYLOAD="${TMPDIR:-/tmp}/smartclip-payload.txt"
+   if "$CLIP" copy --type "<type>" --label "<short label>" < "$PAYLOAD"; then
+     echo CLIPBOARD_OK; rm -f "$PAYLOAD"
+   else
+     echo CLIPBOARD_BLOCKED
+   fi
    ```
 
    (History only records when the user has opted in with `SMARTCLIP_HISTORY=1`;
@@ -90,9 +107,21 @@ the user would otherwise have to select by hand — nothing more.
 
 ## Step 4 — Confirm
 
-Tell the user in one line **what** you copied and **why** that choice, e.g.:
+**If `CLIPBOARD_OK`:** tell the user in one line **what** you copied and **why**
+that choice, e.g.:
 
 > 📋 Copied the `parseConfig()` function (24 lines, raw Python) to your clipboard.
+
+**If `CLIPBOARD_BLOCKED`:** the sandbox blocked the clipboard, but the cleaned
+content is saved to the payload file. Give the user a one-line fallback to run
+in their own terminal, using the **literal** path from Step 1 (not `$TMPDIR`,
+which can differ outside the sandbox):
+
+> 📋 Prepared the `parseConfig()` function, but this sandbox blocked clipboard
+> access. Run this in your terminal to copy it:
+> `pbcopy < /tmp/claude-501/smartclip-payload.txt`
+
+(On Linux swap `pbcopy` for `wl-copy <` or `xclip -selection clipboard <`.)
 
 If the choice was ambiguous, add a short hint that they can refine it, e.g.
 `Run /clp the email to copy something else instead.` Keep it to 1–2 lines —

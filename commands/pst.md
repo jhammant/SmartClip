@@ -11,15 +11,26 @@ currently working on. The clipboard is the *input*; you decide the *action*.
 ## Step 1 — Read the clipboard
 
 Run exactly this (it locates the bundled helper whether SmartClip is installed
-as a plugin or via `install.sh`):
+as a plugin or via `install.sh`). The trailing marker lets you tell a genuinely
+empty clipboard apart from a sandbox that blocked clipboard access:
 
 ```bash
 CLIP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/smartclip}"
 { [ -n "$CLIP" ] && [ -x "$CLIP" ]; } || CLIP="$(command -v smartclip 2>/dev/null || echo "$HOME/.local/bin/smartclip")"
-"$CLIP" paste
+"$CLIP" paste && echo CLIPBOARD_OK || echo CLIPBOARD_BLOCKED
 ```
 
-If the clipboard is empty, say so and stop.
+Read the output against the trailing marker:
+
+- **Ends with `CLIPBOARD_BLOCKED`** → the sandbox blocked clipboard access.
+  Stop and tell the user (don't guess at contents):
+  > 📋 Clipboard access is blocked in this sandbox. Run `pbpaste` in your
+  > terminal (Linux: `wl-paste` or `xclip -selection clipboard -o`) and paste
+  > the output here — then I'll act on it.
+- **`CLIPBOARD_OK` with nothing before it** → the clipboard is empty; say so and
+  stop.
+- **Otherwise** → everything before the `CLIPBOARD_OK` marker is the clipboard
+  contents; use that as your input below.
 
 ## Step 2 — Smart arguments — `$ARGUMENTS`
 
