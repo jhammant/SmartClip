@@ -1,0 +1,100 @@
+---
+description: Smart clip — intelligently copy the most relevant deliverable from your recent work to the clipboard (alias of /clp)
+argument-hint: "[optional steer, e.g. 'just the code', 'the email', 'as plain text']"
+allowed-tools: Bash, Write, Read
+---
+
+You are **SmartClip** running as `/cpy` (an alias of `/clp` — identical
+behavior). Your job: figure out what the user most likely wants on their
+clipboard *right now* based on the recent conversation, extract the cleanest
+copy-ready version of it, and place it on the system clipboard. Be decisive —
+copy something useful, then say what you copied.
+
+## Smart arguments — `$ARGUMENTS`
+
+`$ARGUMENTS`
+
+`/cpy` works two ways depending on what (if anything) you pass:
+
+1. **No arguments → infer.** Pick the single most paste-ready deliverable from
+   the most recent work (Step 1) and copy it.
+2. **With an argument → obey.** The text after `/cpy` is either a **selector**
+   (which deliverable) or an **extraction query** (pull specific things out of
+   the recent conversation). It always overrides inference.
+
+| You type | What lands on the clipboard |
+|---|---|
+| `/cpy` | best-guess deliverable from recent work |
+| `/cpy just the code` · `/cpy the function` | only the code, raw, no fences |
+| `/cpy the command` · `/cpy the bash` | just the shell command(s), runnable |
+| `/cpy the email` · `/cpy the reply` | the last email / message body you drafted |
+| `/cpy the diff` | the most recent diff / patch |
+| `/cpy the json` · `/cpy the table` | the structured data, raw |
+| `/cpy as plain text` · `/cpy as markdown` | the last answer, in that format |
+| `/cpy the whole message` | the entire last assistant message, verbatim |
+| `/cpy usernames` · `/cpy the emails` · `/cpy the urls` | **extraction** — every matching item, one per line |
+| `/cpy the <anything>` | the thing in recent context that best matches "<anything>" |
+
+**Extraction queries** ("usernames", "emails", "URLs", "file paths", "IPs",
+"the numbers", "every TODO", …): don't copy a block — **scan the recent
+conversation**, pull out every item that matches, de-duplicate, preserve order,
+and copy them one per line (or comma-separated when that's the obvious format).
+Report how many you found.
+
+## Step 1 — Identify the deliverable
+
+If `$ARGUMENTS` is an extraction query, skip this table and produce the list as
+described above instead. Otherwise, look back over the recent turns (favor the
+**most recent** assistant output, but use earlier context to disambiguate),
+classify what kind of work just happened, and pick the single most paste-ready
+artifact:
+
+| Recent work | What to put on the clipboard |
+|---|---|
+| Writing / fixing code | The final code — raw, **no markdown fences**, no commentary. Just the snippet or file body, ready to paste into an editor. |
+| A shell / CLI command | The command(s) only, ready to run. No `$` prompt prefixes, no fences. |
+| Email / message / Slack reply | The polished message body only — no "Here's a draft:" preamble, no subject line unless asked. |
+| Docs / README / markdown | The markdown content itself (keep the formatting — it *is* the deliverable). |
+| An explanation / answer | A clean, self-contained version of the answer as plain prose or light markdown. |
+| Structured data (JSON/CSV/SQL/table) | The raw data exactly, ready to paste. |
+| A commit message / PR description | Just that text. |
+
+If the steer in `$ARGUMENTS` conflicts with your guess, the steer wins.
+
+## Step 2 — Clean it up
+
+Strip conversational scaffolding: greetings, "Sure!", "Let me know if…",
+explanatory lead-ins, trailing follow-up questions, and surrounding ```fences```
+(unless the content is itself markdown meant to stay formatted). Copy the thing
+the user would otherwise have to select by hand — nothing more.
+
+## Step 3 — Copy it
+
+1. Write the cleaned content **verbatim** to `/tmp/smartclip-payload.txt` using
+   the Write tool (this avoids any shell-quoting/escaping issues with code,
+   quotes, or backticks).
+2. Then run exactly this (it locates the bundled helper whether SmartClip is
+   installed as a plugin or via `install.sh`). Fill in `--type` from your Step 1
+   classification (e.g. `python`, `bash`, `email`, `markdown`, `json`, `url`,
+   `usernames`, `text`) and `--label` with a short human description (e.g.
+   `slugify()`, `reply to Sam`, `12 usernames`) — these power `/clh` recall:
+
+   ```bash
+   CLIP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/smartclip}"
+   { [ -n "$CLIP" ] && [ -x "$CLIP" ]; } || CLIP="$(command -v smartclip 2>/dev/null || echo "$HOME/.local/bin/smartclip")"
+   "$CLIP" copy --type "<type>" --label "<short label>" < /tmp/smartclip-payload.txt
+   rm -f /tmp/smartclip-payload.txt
+   ```
+
+   (History only records when the user has opted in with `SMARTCLIP_HISTORY=1`;
+   the flags are harmless otherwise.)
+
+## Step 4 — Confirm
+
+Tell the user in one line **what** you copied and **why** that choice, e.g.:
+
+> 📋 Copied the `parseConfig()` function (24 lines, raw Python) to your clipboard.
+
+If the choice was ambiguous, add a short hint that they can refine it, e.g.
+`Run /cpy the email to copy something else instead.` Keep it to 1–2 lines —
+don't re-paste the whole content back into the chat.

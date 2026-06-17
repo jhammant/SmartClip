@@ -85,6 +85,8 @@ argument** to tell it exactly.
 
 ### `/clp` — smart copy
 
+> Also available as **`/cpy`** — an identical alias, if that's easier to reach for.
+
 | Command | What lands on your clipboard |
 |---|---|
 | `/clp` | the best-guess deliverable from recent work |
@@ -170,6 +172,7 @@ SmartClip/
 │   └── marketplace.json     # so others can `/plugin marketplace add`
 ├── commands/
 │   ├── clp.md               # /clp prompt — picks & cleans the deliverable
+│   ├── cpy.md               # /cpy prompt — identical alias of /clp
 │   ├── pst.md               # /pst prompt — reads clipboard, acts in context
 │   └── clh.md               # /clh prompt — list / recall clip history
 ├── bin/
