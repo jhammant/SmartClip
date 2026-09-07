@@ -222,3 +222,20 @@ smarter content classification, and demo GIFs.
 ## License
 
 [MIT](LICENSE) © 2026 Jonathan Hammant
+## Codex installation
+
+From a local checkout, install the same clipboard helper and generate Codex
+skills from the maintained command sources:
+
+```bash
+python3 scripts/install-codex.py
+```
+
+The installer writes `smartclip` to `~/.local/bin` and skills to
+`~/.agents/skills/{clp,cpy,pst,clh}`. Keep `~/.local/bin` on PATH, start a new
+Codex conversation, and use `$clp`, `$cpy`, `$pst` or `$clh`.
+`--skills-dir` and `--bin-dir` support custom locations. Identical files are
+left alone; differing files and existing skill symlinks are refused before
+installation, so inspect or move them aside first. Re-run after updating the
+command sources. Installation does not touch your clipboard or enable history;
+history remains opt-in through `SMARTCLIP_HISTORY=1`.
