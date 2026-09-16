@@ -16,7 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         picker.willPaste = { [weak self] content in self?.watcher.ignore(content) }
         watcher.start()
-        hotKey = HotKey { [weak self] in self?.picker.toggle() }
+        let hotKey = HotKey { [weak self] in self?.picker.toggle() }
+        self.hotKey = hotKey
+        if !hotKey.isRegistered {
+            Notifier.show("⌥⌘V is taken by another app — use the menu bar icon to search clips")
+        }
 
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(showPicker),

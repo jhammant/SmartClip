@@ -9,6 +9,10 @@ final class HotKey {
     private var eventHandler: EventHandlerRef?
     private let action: () -> Void
 
+    /// False when another app already owns the combination — otherwise the
+    /// hotkey just silently never fires.
+    private(set) var isRegistered = false
+
     /// ⌥⌘V by default.
     init(keyCode: UInt32 = UInt32(kVK_ANSI_V),
          modifiers: UInt32 = UInt32(cmdKey | optionKey),
@@ -26,7 +30,9 @@ final class HotKey {
         }, 1, &eventType, context, &eventHandler)
 
         let id = EventHotKeyID(signature: OSType(0x53434C50), id: 1) // 'SCLP'
-        RegisterEventHotKey(keyCode, modifiers, id, GetApplicationEventTarget(), 0, &hotKeyRef)
+        let status = RegisterEventHotKey(keyCode, modifiers, id, GetApplicationEventTarget(), 0, &hotKeyRef)
+        isRegistered = status == noErr
+        Log.debug(isRegistered ? "hotkey registered" : "hotkey NOT registered (OSStatus \(status))")
     }
 
     deinit {
