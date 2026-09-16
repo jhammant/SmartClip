@@ -58,9 +58,10 @@ chmod +x "$BIN_DIR/smartclip"
 ok "helper installed → $BIN_DIR/smartclip"
 
 install_file "commands/clp.md" "$CMD_DIR/clp.md"
+install_file "commands/cpy.md" "$CMD_DIR/cpy.md"
 install_file "commands/pst.md" "$CMD_DIR/pst.md"
 install_file "commands/clh.md" "$CMD_DIR/clh.md"
-ok "commands installed → $CMD_DIR/{clp,pst,clh}.md"
+ok "commands installed → $CMD_DIR/{clp,cpy,pst,clh}.md"
 
 # --- PATH check ---------------------------------------------------------------
 case ":${PATH}:" in
