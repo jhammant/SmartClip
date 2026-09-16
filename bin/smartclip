@@ -8,7 +8,7 @@
 #
 # History is OPT-IN. Set SMARTCLIP_HISTORY=1 to record copies. Entries live
 # under ${XDG_DATA_HOME:-~/.local/share}/smartclip (dir 700, files 600), are
-# capped at SMARTCLIP_HISTORY_MAX (default 200), and anything that looks like a
+# capped at SMARTCLIP_HISTORY_MAX (default 1000), and anything that looks like a
 # secret (tokens, private keys, long opaque blobs) is skipped, not stored.
 #
 # Auto-detects the clipboard backend for macOS, Wayland, X11, Windows/WSL and
@@ -20,7 +20,7 @@ DATA_DIR="${SMARTCLIP_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/smartclip}"
 HIST="$DATA_DIR/history.jsonl"
 CLIPS="$DATA_DIR/clips"
 SEQF="$DATA_DIR/.seq"
-HMAX="${SMARTCLIP_HISTORY_MAX:-200}"
+HMAX="${SMARTCLIP_HISTORY_MAX:-1000}"
 HMAXSIZE="${SMARTCLIP_HISTORY_MAXSIZE:-1048576}"   # don't store clips bigger than this (1 MiB)
 HEXCLUDE="${SMARTCLIP_HISTORY_EXCLUDE:-}"          # user regex; matches → never stored
 
@@ -275,7 +275,7 @@ Security model:
   • previews of skipped items are redacted, never the secret itself
   • clips over SMARTCLIP_HISTORY_MAXSIZE bytes (default 1 MiB) are not stored
   • SMARTCLIP_HISTORY_EXCLUDE='<regex>' adds your own never-store patterns
-  • capped at SMARTCLIP_HISTORY_MAX entries (default 200); oldest pruned
+  • capped at SMARTCLIP_HISTORY_MAX entries (default 1000); oldest pruned
   • `smartclip history clear` purges everything
 
 Note: detection is best-effort and storage is plaintext on disk. Don't enable

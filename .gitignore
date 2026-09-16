@@ -14,3 +14,7 @@ smartclip.*.tmp
 video/node_modules/
 video/out/
 video/.remotion/
+
+# Swift / macOS app
+mac/.build/
+mac/build/
