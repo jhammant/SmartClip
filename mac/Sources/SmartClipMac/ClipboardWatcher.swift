@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import SmartClipCore
 
 /// macOS never tells you the clipboard changed, so like every clipboard manager
@@ -10,6 +11,8 @@ final class ClipboardWatcher {
     private var lastChangeCount: Int
     private var lastContent: String?
     private var ignoredContent: String?
+    private var lastDigest: String?
+    private var ignoredDigest: String?
     private var timer: Timer?
 
     var isPaused = false
@@ -48,6 +51,14 @@ final class ClipboardWatcher {
         ignoredContent = content
     }
 
+    func ignore(_ payload: ClipPayload) {
+        switch payload {
+        case .text(let text): ignoredContent = text
+        case .image(let data): ignoredDigest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        case .files(let urls): ignoredContent = urls.map(\.path).joined(separator: "\n")
+        }
+    }
+
     private func tick() {
         let changeCount = pasteboard.changeCount
         guard changeCount != lastChangeCount else { return }
@@ -57,18 +68,26 @@ final class ClipboardWatcher {
         let types = Set((pasteboard.types ?? []).map(\.rawValue))
         guard types.isDisjoint(with: Self.skipMarkers) else { return }
 
-        guard let content = pasteboard.string(forType: .string),
-              !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
-
-        if content == ignoredContent { ignoredContent = nil; return }
-        if content == lastContent { return }
-
         let source = sourceApplication()
         if let bundleID = source?.bundleIdentifier, Self.deniedBundleIDs.contains(bundleID) { return }
-
-        lastContent = content
         let appName = source?.localizedName ?? ""
+
+        if let content = pasteboard.string(forType: .string),
+           !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            captureText(content, app: appName)
+        } else if let image = imageOnPasteboard() {
+            captureImage(image, app: appName)
+        } else if let urls = fileURLsOnPasteboard() {
+            captureFiles(urls, app: appName)
+        }
+    }
+
+    // MARK: - Text
+
+    private func captureText(_ content: String, app appName: String) {
+        if content == ignoredContent { ignoredContent = nil; return }
+        if content == lastContent { return }
+        lastContent = content
 
         // /cpy copies through the shell helper, which puts the text on the
         // clipboard first and writes its own history entry (with a label worth
@@ -85,6 +104,60 @@ final class ClipboardWatcher {
     /// Long enough for the helper to finish writing its entry, short enough
     /// that the clip is in the picker before you can open it.
     private static let cliGracePeriod: TimeInterval = 0.6
+
+    // MARK: - Images
+
+    /// PNG if the app offered it, otherwise whatever it did offer, re-encoded.
+    /// Screenshots arrive as PNG; Preview and design tools tend to send TIFF,
+    /// which is many times larger for the same picture.
+    private func imageOnPasteboard() -> (data: Data, width: Int, height: Int)? {
+        let png = NSPasteboard.PasteboardType("public.png")
+        if let data = pasteboard.data(forType: png), let rep = NSBitmapImageRep(data: data) {
+            return (data, rep.pixelsWide, rep.pixelsHigh)
+        }
+        guard let tiff = pasteboard.data(forType: .tiff),
+              let rep = NSBitmapImageRep(data: tiff),
+              let converted = rep.representation(using: .png, properties: [:])
+        else { return nil }
+        return (converted, rep.pixelsWide, rep.pixelsHigh)
+    }
+
+    private func captureImage(_ image: (data: Data, width: Int, height: Int), app appName: String) {
+        let digest = SHA256.hash(data: image.data).map { String(format: "%02x", $0) }.joined()
+        if digest == ignoredDigest { ignoredDigest = nil; return }
+        if digest == lastDigest { return }
+        lastDigest = digest
+
+        let size = ByteCountFormatter.string(fromByteCount: Int64(image.data.count), countStyle: .file)
+        let preview = "image \(image.width)×\(image.height) · \(size)"
+        if let record = try? store.append(data: image.data, fileExtension: "png", type: "image",
+                                          preview: preview, app: appName) {
+            onCapture?(record)
+        }
+    }
+
+    // MARK: - Files
+
+    private func fileURLsOnPasteboard() -> [URL]? {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL]
+        guard let urls, !urls.isEmpty, urls.allSatisfy(\.isFileURL) else { return nil }
+        return urls
+    }
+
+    /// Only the paths are stored, never the files themselves — copying a 4 GB
+    /// video in the Finder costs a few dozen bytes of history.
+    private func captureFiles(_ urls: [URL], app appName: String) {
+        let paths = urls.map(\.path).joined(separator: "\n")
+        if paths == lastContent { return }
+        lastContent = paths
+
+        let names = urls.prefix(3).map { $0.lastPathComponent }.joined(separator: ", ")
+        let suffix = urls.count > 3 ? ", +\(urls.count - 3) more" : ""
+        let preview = "\(urls.count) file\(urls.count == 1 ? "" : "s") · \(names)\(suffix)"
+        if let record = try? store.append(content: paths, type: "files", label: preview, app: appName) {
+            onCapture?(record)
+        }
+    }
 
     /// Some apps declare who they are on the pasteboard; otherwise whatever is
     /// in front when the copy lands is right in practice.

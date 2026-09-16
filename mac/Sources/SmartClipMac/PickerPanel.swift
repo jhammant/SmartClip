@@ -16,7 +16,7 @@ final class PickerController: NSObject, NSTableViewDataSource, NSTableViewDelega
     private var keyMonitor: Any?
 
     /// Lets the watcher know we are about to write to the clipboard ourselves.
-    var willPaste: ((String) -> Void)?
+    var willPaste: ((ClipPayload) -> Void)?
 
     init(store: HistoryStore) {
         self.store = store
@@ -104,7 +104,9 @@ final class PickerController: NSObject, NSTableViewDataSource, NSTableViewDelega
         let frontmost = NSWorkspace.shared.frontmostApplication
         if frontmost?.bundleIdentifier != Bundle.main.bundleIdentifier { previousApp = frontmost }
 
-        records = store.recent(500).filter { !$0.file.isEmpty }
+        // Entries whose contents were evicted by the disk budget stay in the
+        // history file, but there is nothing to paste, so they are not offered.
+        records = store.recent(500).filter { store.fileURL(of: $0) != nil }
         searchField.stringValue = ""
         applyFilter()
 
@@ -173,13 +175,14 @@ final class PickerController: NSObject, NSTableViewDataSource, NSTableViewDelega
 
     private func paste(at index: Int) {
         guard filtered.indices.contains(index),
-              let content = store.content(of: filtered[index])
+              let payload = store.payload(for: filtered[index])
         else { return }
-        willPaste?(content)
+        willPaste?(payload)
         hide()
-        let pasted = Paster.paste(content, into: previousApp)
+        let pasted = Paster.paste(payload, into: previousApp)
         if !pasted { Notifier.show("Copied to clipboard — press ⌘V to paste (Accessibility not granted)") }
     }
+
 
     // MARK: - Table
 
@@ -189,7 +192,9 @@ final class PickerController: NSObject, NSTableViewDataSource, NSTableViewDelega
         let identifier = NSUserInterfaceItemIdentifier("cell")
         let cell = tableView.makeView(withIdentifier: identifier, owner: self) as? ClipCellView
             ?? ClipCellView(identifier: identifier)
-        cell.configure(with: filtered[row], shortcut: row < 9 ? row + 1 : nil)
+        let record = filtered[row]
+        let thumbnail = record.isImage ? store.fileURL(of: record).flatMap { NSImage(contentsOf: $0) } : nil
+        cell.configure(with: record, shortcut: row < 9 ? row + 1 : nil, thumbnail: thumbnail)
         return cell
     }
 
@@ -222,6 +227,7 @@ final class PickerController: NSObject, NSTableViewDataSource, NSTableViewDelega
 private final class ClipCellView: NSTableCellView {
     private let title = NSTextField(labelWithString: "")
     private let subtitle = NSTextField(labelWithString: "")
+    private let thumbnail = NSImageView()
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
@@ -231,29 +237,56 @@ private final class ClipCellView: NSTableCellView {
         subtitle.font = .systemFont(ofSize: 11)
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byTruncatingTail
-        let stack = NSStackView(views: [title, subtitle])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 2
+        thumbnail.imageScaling = .scaleProportionallyUpOrDown
+        thumbnail.wantsLayer = true
+        thumbnail.layer?.cornerRadius = 3
+        thumbnail.layer?.masksToBounds = true
+
+        let text = NSStackView(views: [title, subtitle])
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 2
+
+        let stack = NSStackView(views: [thumbnail, text])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            thumbnail.widthAnchor.constraint(equalToConstant: 34),
+            thumbnail.heightAnchor.constraint(equalToConstant: 30),
         ])
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    func configure(with record: ClipRecord, shortcut: Int?) {
+    func configure(with record: ClipRecord, shortcut: Int?, thumbnail image: NSImage?) {
+        thumbnail.image = image ?? icon(for: record)
         let prefix = shortcut.map { "⌘\($0)  " } ?? ""
         title.stringValue = prefix + record.displayText
         // No source app means the shell helper wrote it — that is /cpy.
         var parts = [record.app.isEmpty ? "Claude" : record.app, record.type]
         if let date = record.date { parts.append(Self.relative(date)) }
         subtitle.stringValue = parts.joined(separator: " · ")
+    }
+
+    /// Anything without a thumbnail still gets a glyph, so the rows line up.
+    private func icon(for record: ClipRecord) -> NSImage? {
+        let symbol: String
+        switch record.type {
+        case "files": symbol = "doc.on.doc"
+        case "url": symbol = "link"
+        case "json", "code", "bash": symbol = "curlybraces"
+        case "email", "message": symbol = "envelope"
+        case "image": symbol = "photo"
+        default: symbol = "text.alignleft"
+        }
+        return NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
     }
 
     private static func relative(_ date: Date) -> String {

@@ -27,8 +27,24 @@ Read the output against the trailing marker:
   > 📋 Clipboard access is blocked in this sandbox. Run `pbpaste` in your
   > terminal (Linux: `wl-paste` or `xclip -selection clipboard -o`) and paste
   > the output here — then I'll act on it.
-- **`CLIPBOARD_OK` with nothing before it** → the clipboard is empty; say so and
-  stop.
+- **`CLIPBOARD_OK` with nothing before it** → there is no *text* on the
+  clipboard. Before saying it's empty, check for an image or a file copy — the
+  SmartClip Mac app records those, and `pbpaste` cannot see them:
+
+  ```bash
+  "$CLIP" history list 2>/dev/null | head -1
+  ```
+
+  If that top line is `[image]` or `[files]` **and its timestamp is recent**,
+  that is what the user means by "my clipboard":
+
+  - `[image]` → `"$CLIP" history get 1` prints the path of the stored PNG.
+    **Read that file** with the Read tool so you can actually see the
+    screenshot, then act on it.
+  - `[files]` → `"$CLIP" history get 1` prints the copied paths, one per line.
+    Read or act on those files.
+
+  If there's no recent entry either, say the clipboard is empty and stop.
 - **Otherwise** → everything before the `CLIPBOARD_OK` marker is the clipboard
   contents; use that as your input below.
 
@@ -66,6 +82,8 @@ recent conversation + the current project:
 
 | Clipboard looks like | Default smart action |
 |---|---|
+| An image (a screenshot you just took) | Look at it and say what it shows, or act on what's in it — an error on screen, a design to build, a table to transcribe. |
+| Copied files | Read them and do the obvious thing with them in this project. |
 | An error message / stack trace / failing test output | Diagnose the root cause and propose (or apply) a fix. Locate the relevant file in this repo. |
 | A code snippet | Explain it briefly, **or** integrate it where it clearly belongs if the recent work points there. Match the surrounding code's style. |
 | A diff / patch | Review it, or apply it to the working tree if that's clearly intended. |

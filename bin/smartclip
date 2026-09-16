@@ -8,8 +8,10 @@
 #
 # History is OPT-IN. Set SMARTCLIP_HISTORY=1 to record copies. Entries live
 # under ${XDG_DATA_HOME:-~/.local/share}/smartclip (dir 700, files 600), are
-# capped at SMARTCLIP_HISTORY_MAX (default 1000), and anything that looks like a
-# secret (tokens, private keys, long opaque blobs) is skipped, not stored.
+# kept indefinitely (SMARTCLIP_HISTORY_MAX=N re-enables an entry cap), and
+# anything that looks like a secret (tokens, private keys, long opaque blobs)
+# is skipped, not stored. The SmartClip Mac app keeps the store inside a disk
+# budget by deleting the oldest clip *contents*, never the history itself.
 #
 # Auto-detects the clipboard backend for macOS, Wayland, X11, Windows/WSL and
 # Termux. MIT licensed — part of SmartClip. https://github.com/jhammant/SmartClip
@@ -20,7 +22,7 @@ DATA_DIR="${SMARTCLIP_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/smartclip}"
 HIST="$DATA_DIR/history.jsonl"
 CLIPS="$DATA_DIR/clips"
 SEQF="$DATA_DIR/.seq"
-HMAX="${SMARTCLIP_HISTORY_MAX:-1000}"
+HMAX="${SMARTCLIP_HISTORY_MAX:-0}"          # 0 = keep every entry (see below)
 HMAXSIZE="${SMARTCLIP_HISTORY_MAXSIZE:-1048576}"   # don't store clips bigger than this (1 MiB)
 HEXCLUDE="${SMARTCLIP_HISTORY_EXCLUDE:-}"          # user regex; matches → never stored
 
@@ -140,8 +142,10 @@ looks_secret() {
   if [ "$(wc -l < "$c" | tr -d ' ')" -le 1 ]; then
     tok=$(tr -d '[:space:]' < "$c")
     len=$(printf '%s' "$tok" | wc -c | tr -d ' ')
+    # …but a filesystem path is long and slash-heavy too, and is not a secret.
     if [ "$len" -ge 40 ] && printf '%s' "$tok" | grep -Eq '^[A-Za-z0-9+/_=.-]+$' \
-       && ! printf '%s' "$tok" | grep -q '://'; then
+       && ! printf '%s' "$tok" | grep -q '://' \
+       && ! printf '%s' "$tok" | grep -Eq '^(/|~/|\.\.?/)'; then
       return 0
     fi
   fi
@@ -189,6 +193,7 @@ log_history() { # $1=contentfile $2=type $3=label $4=bytes
 
 prune_history() {
   [ -f "$HIST" ] || return 0
+  [ "$HMAX" -le 0 ] && return 0            # keep everything unless asked otherwise
   lines=$(wc -l < "$HIST" | tr -d ' ')
   [ "$lines" -le "$HMAX" ] && return 0
   drop=$((lines - HMAX))
@@ -229,14 +234,29 @@ hist_list() {
 hist_get() {
   n="${1:-}"; [ -n "$n" ] || die "usage: smartclip history get N"
   line=$(nth_line "$n") || die "no history item #$n"
-  f=$(printf '%s' "$line" | sed -n 's/.*"file":"\(clips\/[0-9][0-9]*\.txt\)".*/\1/p')
+  f=$(printf '%s' "$line" | sed -n 's/.*"file":"\(clips\/[0-9][0-9]*\.[A-Za-z0-9][A-Za-z0-9]*\)".*/\1/p')
   { [ -n "$f" ] && [ -f "$DATA_DIR/$f" ]; } || die "item #$n has no stored content"
-  cat "$DATA_DIR/$f"
+  case "$f" in
+    *.txt) cat "$DATA_DIR/$f" ;;
+    # An image clip: print where it is rather than dumping bytes, so the caller
+    # (or Claude) can open the file.
+    *)     printf '%s\n' "$DATA_DIR/$f" ;;
+  esac
 }
 
 hist_recall() {
   n="${1:-}"; [ -n "$n" ] || die "usage: smartclip history recall N"
-  hist_get "$n" | do_copy --no-history --label "recalled #$n"
+  line=$(nth_line "$n") || die "no history item #$n"
+  case "$line" in
+    *'"file":"clips/'*'.png"'*)
+      have osascript || die "recalling image clips needs macOS (or use the SmartClip app)"
+      p=$(hist_get "$n")
+      osascript -e "set the clipboard to (read (POSIX file \"$p\") as «class PNGf»)" >/dev/null \
+        || die "could not put image clip #$n on the clipboard"
+      printf 'smartclip: image clip #%s copied to clipboard\n' "$n" >&2
+      ;;
+    *) hist_get "$n" | do_copy --no-history --label "recalled #$n" ;;
+  esac
 }
 
 hist_clear() {
@@ -275,7 +295,9 @@ Security model:
   • previews of skipped items are redacted, never the secret itself
   • clips over SMARTCLIP_HISTORY_MAXSIZE bytes (default 1 MiB) are not stored
   • SMARTCLIP_HISTORY_EXCLUDE='<regex>' adds your own never-store patterns
-  • capped at SMARTCLIP_HISTORY_MAX entries (default 1000); oldest pruned
+  • kept indefinitely; SMARTCLIP_HISTORY_MAX=N caps entries and prunes oldest
+  • the Mac app adds images and file copies, and keeps the stored contents
+    inside SMARTCLIP_BUDGET_GB (default 20) by evicting the oldest contents
   • `smartclip history clear` purges everything
 
 Note: detection is best-effort and storage is plaintext on disk. Don't enable

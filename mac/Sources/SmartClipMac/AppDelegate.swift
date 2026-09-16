@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildStatusItem()
 
-        picker.willPaste = { [weak self] content in self?.watcher.ignore(content) }
+        picker.willPaste = { [weak self] payload in self?.watcher.ignore(payload) }
         watcher.start()
         let hotKey = HotKey { [weak self] in self?.picker.toggle() }
         self.hotKey = hotKey
@@ -42,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let recent = store.recent(200).filter { !$0.file.isEmpty }.prefix(8)
+        let recent = store.recent(200).filter { store.fileURL(of: $0) != nil }.prefix(8)
         if recent.isEmpty {
             menu.addItem(withTitle: "Nothing copied yet", action: nil, keyEquivalent: "")
         } else {
@@ -58,6 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let used = ByteCountFormatter.string(fromByteCount: Int64(store.storedBytes()), countStyle: .file)
+        let budget = ByteCountFormatter.string(fromByteCount: Int64(store.budgetBytes), countStyle: .file)
+        menu.addItem(withTitle: "Archive: \(used) of \(budget)", action: nil, keyEquivalent: "")
+
         add(to: menu, "Search clips…  ⌥⌘V", #selector(showPicker))
         add(to: menu, watcher.isPaused ? "Resume capture" : "Pause capture", #selector(togglePause))
         if !Paster.hasAccessibility {
@@ -88,11 +92,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func copyRecent(_ sender: NSMenuItem) {
-        let recent = store.recent(200).filter { !$0.file.isEmpty }
+        let recent = store.recent(200).filter { store.fileURL(of: $0) != nil }
         guard recent.indices.contains(sender.tag),
-              let content = store.content(of: recent[sender.tag]) else { return }
-        watcher.ignore(content)
-        Paster.placeOnClipboard(content)
+              let payload = store.payload(for: recent[sender.tag]) else { return }
+        watcher.ignore(payload)
+        Paster.placeOnClipboard(payload)
         Notifier.show("Copied — press ⌘V where you want it")
     }
 

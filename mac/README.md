@@ -1,9 +1,9 @@
 # SmartClip for Mac
 
 A menu-bar companion to SmartClip's `/cpy`, `/pst` and `/clh` commands. It
-records **everything you copy**, not just what Claude copies for you, into the
-same history store — so `/pst` and `/clh` can reach your own clips too — and
-gives you a ⌥⌘V picker to paste any of them back.
+records **everything you copy** — text, images and files, not just what Claude
+copies for you — into the same history store, and gives you a ⌥⌘V picker to
+paste any of it back.
 
 ```bash
 cd mac
@@ -28,6 +28,29 @@ works without it).
 The menu bar icon also lists the last 8 clips (click to put one on the
 clipboard), pauses capture, and opens the history folder.
 
+## What it captures, and what it keeps
+
+| You copy | Stored as |
+|---|---|
+| Text | the text (rich text is kept as plain text) |
+| An image or screenshot | a PNG in `clips/`, listed as `image 2560×1440 · 3.1 MB` |
+| Files in the Finder | just their **paths** — copying a 4 GB video costs a few dozen bytes |
+| A password from 1Password | nothing at all |
+
+**The index is the archive.** Every copy you ever make stays listed in
+`history.jsonl` for ever — a line is about 200 bytes, so years of copying is a
+few hundred MB. Only the *contents* are budgeted: once `clips/` passes
+**20 GB** the oldest contents are deleted, oldest first, and their history
+lines remain (the picker stops offering those, since there is nothing to
+paste). Single items over **16 MB** are never stored in the first place, so one
+enormous image can't eat the budget.
+
+```bash
+SMARTCLIP_BUDGET_GB=20     # total disk for stored contents
+SMARTCLIP_MAX_CLIP_MB=16   # largest single image kept
+SMARTCLIP_HISTORY_MAX=0    # 0 = keep every history line; N = cap and prune
+```
+
 ## How it fits with the Claude Code commands
 
 Everything shares one store at `~/.local/share/smartclip`:
@@ -38,6 +61,9 @@ Everything shares one store at `~/.local/share/smartclip`:
 - The app writes entries for every other copy, tagged with the **source app**.
 - `/clh` and `/pst` read the whole lot, so "the link I copied from Slack" is
   something Claude can actually resolve.
+- `/pst` with an **image** on the clipboard now works: `pbpaste` returns
+  nothing, so it falls back to the newest history entry and reads the stored
+  PNG — copy a screenshot, run `/pst`, and Claude can see it.
 
 The picker labels each clip with where it came from — an app name, or "Claude"
 for the ones `/cpy` made.
@@ -55,7 +81,10 @@ The same rules as the CLI, enforced in the app:
   logged as `redacted` with the content **not** written to disk.
 - Clips over 1 MiB are noted but not stored.
 - Everything lives in `~/.local/share/smartclip` as plaintext, owner-only
-  (`700`/`600`), capped at 1000 entries. `smartclip history clear` wipes it.
+  (`700`/`600`). `smartclip history clear` wipes it.
+- **Images are not scanned** — nothing can tell whether a screenshot shows a
+  password. If you screenshot a credential, it is on disk until it ages out of
+  the budget. Pause capture from the menu bar when that matters.
 - Nothing leaves the machine.
 
 Set `SMARTCLIP_HISTORY_EXCLUDE='<regex>'` to add your own never-store patterns.

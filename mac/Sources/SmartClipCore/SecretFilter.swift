@@ -28,13 +28,19 @@ public enum SecretFilter {
         return isLoneOpaqueToken(content)
     }
 
-    /// A single line that is one long opaque blob is almost always a key.
+    /// A single line that is one long opaque blob is almost always a key —
+    /// unless it is a filesystem path, which is long, slash-heavy and
+    /// completely ordinary to copy.
     private static func isLoneOpaqueToken(_ content: String) -> Bool {
         let lines = content.split(whereSeparator: \.isNewline)
         guard lines.count <= 1 else { return false }
         let token = content.filter { !$0.isWhitespace }
-        guard token.utf8.count >= 40, !token.contains("://") else { return false }
+        guard token.utf8.count >= 40, !token.contains("://"), !isPath(token) else { return false }
         return matches("^[A-Za-z0-9+/_=.-]+$", token)
+    }
+
+    private static func isPath(_ token: String) -> Bool {
+        ["/", "~/", "./", "../"].contains { token.hasPrefix($0) }
     }
 
     private static func matches(_ pattern: String, _ s: String) -> Bool {

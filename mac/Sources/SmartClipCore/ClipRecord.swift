@@ -103,4 +103,8 @@ public struct ClipRecord: Equatable {
     /// What the picker shows: the human label when Claude gave it one,
     /// otherwise the preview of the content itself.
     public var displayText: String { label.isEmpty ? preview : label }
+
+    public var isImage: Bool { type == "image" }
+    /// A copy of one or more files from the Finder: the stored text is their paths.
+    public var isFileList: Bool { type == "files" }
 }

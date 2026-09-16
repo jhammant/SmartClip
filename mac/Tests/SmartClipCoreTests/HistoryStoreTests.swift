@@ -67,6 +67,51 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(files.count, 5)
     }
 
+    func testImagesAreStoredAsFilesAlongsideTheTextIndex() throws {
+        let png = Data("not really a png, but bytes are bytes".utf8)
+        let record = try store.append(data: png, fileExtension: "png", type: "image",
+                                      preview: "image 120×80 · 36 bytes", app: "Screenshot")
+        XCTAssertTrue(record.isImage)
+        XCTAssertEqual(record.file, "clips/1.png")
+        XCTAssertEqual(store.data(of: record), png)
+        XCTAssertNil(store.content(of: record), "an image must not be read back as text")
+        XCTAssertEqual(store.recent().first?.preview, "image 120×80 · 36 bytes")
+    }
+
+    func testOversizedImagesAreNotStored() throws {
+        store = HistoryStore(dir: dir, maxBinaryBytes: 8)
+        let record = try store.append(data: Data(repeating: 0, count: 64), fileExtension: "png",
+                                      type: "image", preview: "image")
+        XCTAssertEqual(record.type, "large")
+        XCTAssertEqual(record.file, "")
+        XCTAssertNil(store.fileURL(of: record))
+    }
+
+    func testBudgetEvictsOldestContentsButKeepsEveryHistoryLine() throws {
+        store = HistoryStore(dir: dir, maxEntries: 0, budgetBytes: 100)
+        var records: [ClipRecord] = []
+        // Spaces matter: a 40-character run of unbroken alphanumerics would be
+        // read as a credential and never stored, so nothing would be evicted.
+        for i in 1...5 {
+            records.append(try store.append(content: String(repeating: "clip \(i) ", count: 6)))
+        }
+        XCTAssertTrue(records.allSatisfy { !$0.file.isEmpty }, "all five must actually be stored")
+
+        let lines = try String(contentsOf: dir.appendingPathComponent("history.jsonl"), encoding: .utf8)
+            .split(separator: "\n")
+        XCTAssertEqual(lines.count, 5, "the index is the archive — every copy stays listed")
+        XCTAssertLessThanOrEqual(store.storedBytes(), 100)
+        XCTAssertNil(store.fileURL(of: records[0]), "oldest contents evicted")
+        XCTAssertNotNil(store.fileURL(of: records[4]), "newest contents kept")
+    }
+
+    func testNothingIsPrunedByDefault() throws {
+        store = HistoryStore(dir: dir)
+        for i in 1...50 { try store.append(content: "clip \(i)") }
+        XCTAssertEqual(store.recent(1000).count, 50)
+        XCTAssertNotNil(store.fileURL(of: store.recent(1000).last!))
+    }
+
     func testRecentIsNewestFirst() throws {
         try store.append(content: "first")
         try store.append(content: "second")
@@ -82,6 +127,14 @@ final class SecretFilterTests: XCTestCase {
         XCTAssertTrue(SecretFilter.looksSecret("-----BEGIN RSA PRIVATE KEY-----"))
         XCTAssertTrue(SecretFilter.looksSecret("AKIAIOSFODNN7EXAMPLE"))
         XCTAssertTrue(SecretFilter.looksSecret(String(repeating: "a1B2", count: 12)))
+    }
+
+    func testLongFilePathsAreNotMistakenForTokens() {
+        // 40+ characters of slashes, dots and letters — the same shape as an
+        // opaque credential, but copying a path is completely ordinary.
+        XCTAssertFalse(SecretFilter.looksSecret("/Users/jhammant/dev/utilities/SmartClip/README.md"))
+        XCTAssertFalse(SecretFilter.looksSecret("~/Library/Application Support/SmartClip/clips/42.png"))
+        XCTAssertTrue(SecretFilter.looksSecret("AKIAIOSFODNN7EXAMPLEAKIAIOSFODNN7EXAMPLE1234"))
     }
 
     func testOrdinaryTextIsKept() {
