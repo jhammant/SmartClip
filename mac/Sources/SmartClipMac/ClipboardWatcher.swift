@@ -129,12 +129,25 @@ final class ClipboardWatcher {
         lastDigest = digest
 
         let size = ByteCountFormatter.string(fromByteCount: Int64(image.data.count), countStyle: .file)
-        let preview = "image \(image.width)×\(image.height) · \(size)"
-        if let record = try? store.append(data: image.data, fileExtension: "png", type: "image",
-                                          preview: preview, app: appName) {
-            onCapture?(record)
+        let summary = "image \(image.width)×\(image.height) · \(size)"
+        let store = self.store
+
+        // OCR takes a few hundred ms on a full-screen capture — far too long for
+        // the main thread, which is also drawing the picker. Skip it for images
+        // too big to keep anyway.
+        ocrQueue.async { [weak self] in
+            let text = image.data.count <= store.maxBinaryBytes
+                ? TextRecognizer.text(in: image.data) : ""
+            let preview = text.isEmpty ? summary : "\(summary) · \(text)"
+            let record = try? store.append(data: image.data, fileExtension: "png", type: "image",
+                                           preview: ClipRecord.makePreview(preview),
+                                           app: appName, ocr: text)
+            Log.debug("image captured: \(summary), \(text.count) chars of text")
+            if let record { DispatchQueue.main.async { self?.onCapture?(record) } }
         }
     }
+
+    private let ocrQueue = DispatchQueue(label: "io.hammant.smartclip.ocr", qos: .utility)
 
     // MARK: - Files
 

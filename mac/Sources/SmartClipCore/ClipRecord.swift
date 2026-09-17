@@ -4,7 +4,7 @@ import Foundation
 ///
 /// The shell helper (`bin/smartclip`) parses this file with `sed`, one field at
 /// a time, so the field order and escaping here must match what it writes:
-/// ts, dir, type, label, bytes, file, [app], preview — preview stays last,
+/// ts, dir, type, label, bytes, file, [app], [ocr], preview — preview stays last,
 /// because its value is the only one that can contain arbitrary text.
 public struct ClipRecord: Equatable {
     public var ts: String
@@ -16,10 +16,13 @@ public struct ClipRecord: Equatable {
     public var file: String
     /// Source application. Empty for entries written by the shell helper.
     public var app: String
+    /// Text read out of an image clip, so screenshots are searchable. It stays
+    /// in the index even after the image itself is evicted by the disk budget.
+    public var ocr: String
     public var preview: String
 
     public init(ts: String, dir: String = "copy", type: String, label: String = "",
-                bytes: Int, file: String = "", app: String = "", preview: String) {
+                bytes: Int, file: String = "", app: String = "", ocr: String = "", preview: String) {
         self.ts = ts
         self.dir = dir
         self.type = type
@@ -27,11 +30,12 @@ public struct ClipRecord: Equatable {
         self.bytes = bytes
         self.file = file
         self.app = app
+        self.ocr = ocr
         self.preview = preview
     }
 
     public var jsonLine: String {
-        let fields = [
+        var fields = [
             "\"ts\":\"\(Self.escape(ts))\"",
             "\"dir\":\"\(Self.escape(dir))\"",
             "\"type\":\"\(Self.escape(type))\"",
@@ -39,8 +43,10 @@ public struct ClipRecord: Equatable {
             "\"bytes\":\(bytes)",
             "\"file\":\"\(Self.escape(file))\"",
             "\"app\":\"\(Self.escape(app))\"",
-            "\"preview\":\"\(Self.escape(preview))\"",
         ]
+        // Only image clips have it; keeping it off text lines keeps them small.
+        if !ocr.isEmpty { fields.append("\"ocr\":\"\(Self.escape(ocr))\"") }
+        fields.append("\"preview\":\"\(Self.escape(preview))\"")
         return "{" + fields.joined(separator: ",") + "}"
     }
 
@@ -82,6 +88,7 @@ public struct ClipRecord: Equatable {
             bytes: obj["bytes"] as? Int ?? 0,
             file: str("file"),
             app: str("app"),
+            ocr: str("ocr"),
             preview: str("preview")
         )
     }

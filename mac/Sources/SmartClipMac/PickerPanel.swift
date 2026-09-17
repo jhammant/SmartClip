@@ -158,7 +158,8 @@ final class PickerController: NSObject, NSTableViewDataSource, NSTableViewDelega
         } else {
             let terms = query.split(separator: " ").map(String.init)
             filtered = records.filter { record in
-                let haystack = "\(record.displayText) \(record.preview) \(record.app) \(record.type)".lowercased()
+                // .ocr makes screenshots findable by the words in them.
+                let haystack = "\(record.displayText) \(record.preview) \(record.ocr) \(record.app) \(record.type)".lowercased()
                 return terms.allSatisfy { haystack.contains($0) }
             }
         }

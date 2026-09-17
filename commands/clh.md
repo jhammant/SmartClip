@@ -23,6 +23,7 @@ CLIP="${CLAUDE_PLUGIN_ROOT:+$CLAUDE_PLUGIN_ROOT/bin/smartclip}"
 |---|---|
 | *(empty)* | `"$CLIP" history list` and show the numbered list to the user |
 | a number `N` | `"$CLIP" history recall N` — re-copies item #N to the clipboard |
+| `search <words>` | `"$CLIP" history search "<words>"` — matching entries, numbered like the list |
 | `clear` | `"$CLIP" history clear` — purge all history (mention it's irreversible) |
 | natural language | resolve it to an index yourself, then recall (see below) |
 
@@ -31,6 +32,14 @@ from earlier", "the email I copied"): run `"$CLIP" history list` to see the
 numbered, typed entries (newest = 1), pick the single best match by type +
 preview + recency, then run `"$CLIP" history recall <that number>`. If nothing
 matches, say so and show the list instead of guessing.
+
+**Looking for something specific or older** ("the screenshot with the booking
+reference", "that invoice number", "the error I copied last week"): run
+`"$CLIP" history search "<distinctive words>"` first. It searches labels,
+previews, source apps and — when the SmartClip Mac app is running — the text
+read out of screenshots, across the whole history rather than the recent list.
+Result numbers work with `recall` and `get`. For an `[image]` result,
+`"$CLIP" history get N` prints the PNG's path: Read it to see the image.
 
 ## Empty or disabled history
 

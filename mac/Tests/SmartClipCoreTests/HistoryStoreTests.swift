@@ -137,6 +137,12 @@ final class SecretFilterTests: XCTestCase {
         XCTAssertTrue(SecretFilter.looksSecret("AKIAIOSFODNN7EXAMPLEAKIAIOSFODNN7EXAMPLE1234"))
     }
 
+    func testLongSentencesWithoutPunctuationAreNotTokens() {
+        // Regression: spaces used to be stripped before the "one opaque token"
+        // check, so this ordinary sentence was redacted as a secret.
+        XCTAssertFalse(SecretFilter.looksSecret("Thursday at ten works for me so see you then at the office Sam"))
+    }
+
     func testOrdinaryTextIsKept() {
         XCTAssertFalse(SecretFilter.looksSecret("Hi Sam, that works for me — Thursday at 10?"))
         XCTAssertFalse(SecretFilter.looksSecret("https://github.com/jhammant/SmartClip/pull/12"))

@@ -33,13 +33,14 @@ clipboard), pauses capture, and opens the history folder.
 | You copy | Stored as |
 |---|---|
 | Text | the text (rich text is kept as plain text) |
-| An image or screenshot | a PNG in `clips/`, listed as `image 2560×1440 · 3.1 MB` |
+| An image or screenshot | a PNG in `clips/`, **plus the text in it** (on-device OCR), so you can search for it |
 | Files in the Finder | just their **paths** — copying a 4 GB video costs a few dozen bytes |
 | A password from 1Password | nothing at all |
 
 **The index is the archive.** Every copy you ever make stays listed in
-`history.jsonl` for ever — a line is about 200 bytes, so years of copying is a
-few hundred MB. Only the *contents* are budgeted: once `clips/` passes
+`history.jsonl` for ever — a text line is about 200 bytes and a screenshot's
+line carries up to 8,000 characters of its text, so years of copying is still
+well under a GB. Only the *contents* are budgeted: once `clips/` passes
 **20 GB** the oldest contents are deleted, oldest first, and their history
 lines remain (the picker stops offering those, since there is nothing to
 paste). Single items over **16 MB** are never stored in the first place, so one
@@ -61,6 +62,10 @@ Everything shares one store at `~/.local/share/smartclip`:
 - The app writes entries for every other copy, tagged with the **source app**.
 - `/clh` and `/pst` read the whole lot, so "the link I copied from Slack" is
   something Claude can actually resolve.
+- **Screenshots are searchable by what they say.** Type "gate 23" in the
+  picker, or run `smartclip history search "gate 23"`, and the boarding pass
+  you screenshotted last month comes up. `/clh` uses the same search. The text
+  stays in the index even after the image itself is evicted by the budget.
 - `/pst` with an **image** on the clipboard now works: `pbpaste` returns
   nothing, so it falls back to the newest history entry and reads the stored
   PNG — copy a screenshot, run `/pst`, and Claude can see it.
@@ -82,9 +87,10 @@ The same rules as the CLI, enforced in the app:
 - Clips over 1 MiB are noted but not stored.
 - Everything lives in `~/.local/share/smartclip` as plaintext, owner-only
   (`700`/`600`). `smartclip history clear` wipes it.
-- **Images are not scanned** — nothing can tell whether a screenshot shows a
-  password. If you screenshot a credential, it is on disk until it ages out of
-  the budget. Pause capture from the menu bar when that matters.
+- **Screenshots get the same secret check as text.** The app reads the text
+  out of every image; if that text looks like a credential, neither the image
+  nor its text is kept. OCR is best-effort — tiny or stylised text can be
+  missed — so pause capture from the menu bar when it really matters.
 - Nothing leaves the machine.
 
 Set `SMARTCLIP_HISTORY_EXCLUDE='<regex>'` to add your own never-store patterns.
@@ -105,12 +111,19 @@ Things that are not obvious about clipboard apps on macOS:
 - **The hotkey uses Carbon's `RegisterEventHotKey`**, the one API that gives a
   system-wide hotkey *without* Accessibility. An event tap would need the grant
   just to listen for the keystroke.
+- **OCR is Apple's Vision framework** (`VNRecognizeTextRequest`, the engine
+  behind Live Text), on the Neural Engine, with nothing leaving the Mac. In
+  `.accurate` mode a full 2560×1440 screenshot takes ~1.7 s here (`.fast` is
+  0.3 s but misreads small text), so it runs on a background queue and the
+  clip lands in history a moment after you copy it. Recognised lines are
+  joined with spaces, not newlines, because the history line strips control
+  characters.
 - **The helper copies first and logs second**, so the app waits 0.6 s before
   recording a clip and then checks whether `/cpy` already logged it. Without
   that wait you get every Claude copy twice.
 
 ```bash
-swift test                          # core: store format, secret filter, pruning
+swift test                          # core: store format, secret filter, budget, OCR
 SMARTCLIP_DEBUG=1 .build/debug/SmartClipMac   # trace what it is doing
 SmartClip --show                    # open the picker from a script or a test
 ```

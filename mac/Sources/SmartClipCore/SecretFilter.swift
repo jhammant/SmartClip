@@ -32,9 +32,11 @@ public enum SecretFilter {
     /// unless it is a filesystem path, which is long, slash-heavy and
     /// completely ordinary to copy.
     private static func isLoneOpaqueToken(_ content: String) -> Bool {
-        let lines = content.split(whereSeparator: \.isNewline)
-        guard lines.count <= 1 else { return false }
-        let token = content.filter { !$0.isWhitespace }
+        // A token is one unbroken run: trim the ends, but any space *inside*
+        // means it is words, not a key. (Stripping every space first turned any
+        // long unpunctuated sentence into a "token" and redacted it.)
+        let token = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.contains(where: \.isWhitespace) else { return false }
         guard token.utf8.count >= 40, !token.contains("://"), !isPath(token) else { return false }
         return matches("^[A-Za-z0-9+/_=.-]+$", token)
     }

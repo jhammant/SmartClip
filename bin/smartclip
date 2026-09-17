@@ -3,7 +3,7 @@
 #
 #   smartclip copy [--type T] [--label L] [--no-history]   < file
 #   smartclip paste                                          > file
-#   smartclip history [list | get N | recall N | path | clear]
+#   smartclip history [list | search TEXT | get N | recall N | path | clear]
 #   ... | smartclip            # "copy" is the default subcommand
 #
 # History is OPT-IN. Set SMARTCLIP_HISTORY=1 to record copies. Entries live
@@ -139,7 +139,10 @@ looks_secret() {
     return 0
   fi
   # 4. a lone high-entropy opaque token (e.g. a bare API key on one line)
-  if [ "$(wc -l < "$c" | tr -d ' ')" -le 1 ]; then
+  #    A token has no spaces inside it: trim the ends only. Stripping every
+  #    space first made any long unpunctuated sentence look like a key.
+  if [ "$(wc -l < "$c" | tr -d ' ')" -le 1 ] \
+     && ! sed 's/^[[:space:]]*//; s/[[:space:]]*$//' "$c" | grep -q '[[:space:]]'; then
     tok=$(tr -d '[:space:]' < "$c")
     len=$(printf '%s' "$tok" | wc -c | tr -d ' ')
     # …but a filesystem path is long and slash-heavy too, and is not a secret.
@@ -231,6 +234,28 @@ hist_list() {
   done
 }
 
+hist_search() {
+  q="${1:-}"; [ -n "$q" ] || die "usage: smartclip history search TEXT"
+  [ -f "$HIST" ] || { printf 'smartclip: no history yet.\n' >&2; return 0; }
+  # Numbered exactly like `history list` (newest = 1), so `get N` and
+  # `recall N` work on a result. Matches the label, the preview, the source
+  # app and any text the Mac app read out of an image — not the JSON keys.
+  tac_file "$HIST" | awk -v q="$q" '
+    BEGIN { q = tolower(q) }
+    {
+      n++; s = $0
+      gsub(/"(ts|dir|bytes|file)":("[^"]*"|[0-9]+)/, "", s)
+      gsub(/"(type|label|app|ocr|preview)":/, "", s)
+      if (index(tolower(s), q)) print n "\t" $0
+    }' | while IFS= read -r row; do
+    i=${row%%"$(printf '\t')"*}; line=${row#*"$(printf '\t')"}
+    ts=$(field "$line" ts); ty=$(field "$line" type)
+    lb=$(field "$line" label); pv=$(field "$line" preview)
+    [ -n "$lb" ] && desc=$lb || desc=$pv
+    printf '%3d  %-19s  %-9s  %s\n' "$i" "$ts" "[$ty]" "$desc"
+  done
+}
+
 hist_get() {
   n="${1:-}"; [ -n "$n" ] || die "usage: smartclip history get N"
   line=$(nth_line "$n") || die "no history item #$n"
@@ -268,11 +293,12 @@ do_history() {
   action="${1:-list}"; [ "$#" -gt 0 ] && shift || true
   case "$action" in
     list|ls|"") hist_list ;;
+    search|find|s) hist_search "$*" ;;
     get)        hist_get "${1:-}" ;;
     recall|re)  hist_recall "${1:-}" ;;
     path)       printf '%s\n' "$HIST" ;;
     clear)      hist_clear ;;
-    *) die "unknown history action '$action' (list | get N | recall N | path | clear)" 2 ;;
+    *) die "unknown history action '$action' (list | search TEXT | get N | recall N | path | clear)" 2 ;;
   esac
 }
 
@@ -282,7 +308,7 @@ smartclip — cross-platform clipboard read/write + typed history.
 
   smartclip copy [--type T] [--label L] [--no-history]  < file
   smartclip paste                                        > file
-  smartclip history [list | get N | recall N | path | clear]
+  smartclip history [list | search TEXT | get N | recall N | path | clear]
   ... | smartclip            # "copy" is the default
 
 History is OPT-IN and stored locally in plaintext. Enable with:

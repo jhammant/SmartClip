@@ -107,7 +107,7 @@ public final class HistoryStore {
     /// shell helper's `history list` still reads sensibly.
     @discardableResult
     public func append(data: Data, fileExtension: String, type: String, preview: String,
-                       label: String = "", app: String = "") throws -> ClipRecord {
+                       label: String = "", app: String = "", ocr: String = "") throws -> ClipRecord {
         try queue.sync {
             try ensureDirectories()
             var record: ClipRecord
@@ -116,6 +116,13 @@ public final class HistoryStore {
                 record = ClipRecord(ts: ClipRecord.timestamp(), type: "large",
                                     label: "(skipped: \(data.count) bytes, over \(maxBinaryBytes)B limit)",
                                     bytes: data.count, app: app, preview: "(not stored)")
+            } else if !ocr.isEmpty, SecretFilter.looksSecret(ocr) {
+                // Reading the text out of a screenshot means it can finally be
+                // held to the same rule as copied text: a picture of a key is
+                // still a key, so neither the image nor its text is kept.
+                record = ClipRecord(ts: ClipRecord.timestamp(), type: "redacted",
+                                    label: "(skipped: image text looked like a secret)",
+                                    bytes: data.count, app: app, preview: "(redacted)")
             } else {
                 let seq = try nextSequence()
                 let relative = "clips/\(seq).\(fileExtension)"
@@ -125,7 +132,8 @@ public final class HistoryStore {
                                                      ofItemAtPath: url.path)
                 if let cached = storedBytesCache { storedBytesCache = cached + data.count }
                 record = ClipRecord(ts: ClipRecord.timestamp(), type: type, label: label,
-                                    bytes: data.count, file: relative, app: app, preview: preview)
+                                    bytes: data.count, file: relative, app: app, ocr: ocr,
+                                    preview: preview)
             }
 
             try appendLine(record.jsonLine)
