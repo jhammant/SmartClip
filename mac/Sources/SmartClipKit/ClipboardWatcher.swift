@@ -40,9 +40,16 @@ final class ClipboardWatcher {
     }
 
     func start() {
+        guard timer == nil else { return }
+        lastChangeCount = pasteboard.changeCount  // only what is copied from now on
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
     }
 
     /// Called before we put something on the clipboard ourselves, so pasting

@@ -127,3 +127,18 @@ swift test                          # core: store format, secret filter, budget,
 SMARTCLIP_DEBUG=1 .build/debug/SmartClipMac   # trace what it is doing
 SmartClip --show                    # open the picker from a script or a test
 ```
+
+## Hosting the engine in another app
+
+Everything except the menu-bar icon lives in the `SmartClipKit` library
+(`SmartClipEngine`: capture, the history store, the ⌥⌘V picker, putting clips
+back). SmartClip.app is a thin menu around it, and another menu-bar app can host
+the same engine instead; [Roost](https://github.com/jhammant/roost) does, with
+SmartClip as its Clipboard module. Run one host at a time, or every copy is
+recorded twice; `SmartClipEngine.runningSmartClipApp()` tells a host whether
+SmartClip.app is already running.
+
+```swift
+.package(path: "../SmartClip/mac")          // in your Package.swift
+.product(name: "SmartClipKit", package: "mac")
+```

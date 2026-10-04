@@ -3,11 +3,11 @@ import AppKit
 /// A small floating toast. Deliberately not a system notification: those need a
 /// bundle identifier registered with the notification centre and a permission
 /// prompt, for something that only ever says "done".
-enum Notifier {
+public enum Notifier {
     private static var panel: NSPanel?
     private static var hideWork: DispatchWorkItem?
 
-    static func show(_ message: String, duration: TimeInterval = 2.2) {
+    public static func show(_ message: String, duration: TimeInterval = 2.2) {
         let label = NSTextField(labelWithString: message)
         label.font = .systemFont(ofSize: 12)
         label.textColor = .labelColor

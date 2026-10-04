@@ -1,4 +1,5 @@
 import AppKit
+import SmartClipKit
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 
@@ -11,7 +12,7 @@ if arguments.contains("--version") {
 // a Raycast command or a test can trigger it without a keystroke.
 if arguments.contains("--show") {
     DistributedNotificationCenter.default().postNotificationName(
-        AppDelegate.showPickerNotification, object: nil, userInfo: nil, deliverImmediately: true)
+        SmartClipEngine.showPickerNotification, object: nil, userInfo: nil, deliverImmediately: true)
     exit(0)
 }
 

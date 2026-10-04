@@ -1,31 +1,18 @@
 import AppKit
 import ServiceManagement
 import SmartClipCore
+import SmartClipKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    static let showPickerNotification = Notification.Name("io.hammant.smartclip.showPicker")
-
-    private let store = HistoryStore()
-    private lazy var watcher = ClipboardWatcher(store: store)
-    private lazy var picker = PickerController(store: store)
+    private let engine = SmartClipEngine()
     private var statusItem: NSStatusItem!
-    private var hotKey: HotKey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildStatusItem()
-
-        picker.willPaste = { [weak self] payload in self?.watcher.ignore(payload) }
-        watcher.start()
-        let hotKey = HotKey { [weak self] in self?.picker.toggle() }
-        self.hotKey = hotKey
-        if !hotKey.isRegistered {
+        if !engine.start() {
             Notifier.show("⌥⌘V is taken by another app — use the menu bar icon to search clips")
         }
-
-        DistributedNotificationCenter.default().addObserver(
-            self, selector: #selector(showPicker),
-            name: Self.showPickerNotification, object: nil)
-        Log.debug("launched; store at \(store.dir.path)")
+        Log.debug("launched; store at \(engine.store.dir.path)")
     }
 
     // MARK: - Menu bar
@@ -39,15 +26,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
     }
 
+    private var shownClips: [ClipRecord] = []
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        let recent = store.recent(200).filter { store.fileURL(of: $0) != nil }.prefix(8)
-        if recent.isEmpty {
+        shownClips = engine.recentClips(8)
+        if shownClips.isEmpty {
             menu.addItem(withTitle: "Nothing copied yet", action: nil, keyEquivalent: "")
         } else {
             menu.addItem(withTitle: "Recent clips", action: nil, keyEquivalent: "")
-            for (index, record) in recent.enumerated() {
+            for (index, record) in shownClips.enumerated() {
                 let title = String(record.displayText.prefix(60))
                 let item = NSMenuItem(title: title, action: #selector(copyRecent(_:)), keyEquivalent: "")
                 item.target = self
@@ -58,13 +47,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let store = engine.store
         let used = ByteCountFormatter.string(fromByteCount: Int64(store.storedBytes()), countStyle: .file)
         let budget = ByteCountFormatter.string(fromByteCount: Int64(store.budgetBytes), countStyle: .file)
         menu.addItem(withTitle: "Archive: \(used) of \(budget)", action: nil, keyEquivalent: "")
 
         add(to: menu, "Search clips…  ⌥⌘V", #selector(showPicker))
-        add(to: menu, watcher.isPaused ? "Resume capture" : "Pause capture", #selector(togglePause))
-        if !Paster.hasAccessibility {
+        add(to: menu, engine.isPaused ? "Resume capture" : "Pause capture", #selector(togglePause))
+        if !engine.hasAccessibility {
             add(to: menu, "Enable paste-back…", #selector(requestAccessibility))
         }
         add(to: menu, "Open history folder", #selector(openHistoryFolder))
@@ -86,27 +76,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showPicker() {
         Log.debug("showPicker requested")
-        // The menu is tracking when this fires from a click; let it close first
-        // so the app we were in is still the one behind the picker.
-        DispatchQueue.main.async { [weak self] in self?.picker.show() }
+        engine.showPicker()
     }
 
     @objc private func copyRecent(_ sender: NSMenuItem) {
-        let recent = store.recent(200).filter { store.fileURL(of: $0) != nil }
-        guard recent.indices.contains(sender.tag),
-              let payload = store.payload(for: recent[sender.tag]) else { return }
-        watcher.ignore(payload)
-        Paster.placeOnClipboard(payload)
+        guard shownClips.indices.contains(sender.tag), engine.copy(shownClips[sender.tag]) else { return }
         Notifier.show("Copied — press ⌘V where you want it")
     }
 
     @objc private func togglePause() {
-        watcher.isPaused.toggle()
-        Notifier.show(watcher.isPaused ? "Clipboard capture paused" : "Clipboard capture on")
+        engine.isPaused.toggle()
+        Notifier.show(engine.isPaused ? "Clipboard capture paused" : "Clipboard capture on")
     }
 
     @objc private func requestAccessibility() {
-        Paster.requestAccessibility()
+        engine.requestAccessibility()
     }
 
     /// SMAppService registers the bundle itself as a login item — no helper
@@ -127,7 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openHistoryFolder() {
-        NSWorkspace.shared.open(store.dir)
+        NSWorkspace.shared.open(engine.store.dir)
     }
 
     @objc private func quit() {
